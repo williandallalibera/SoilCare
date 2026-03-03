@@ -9,13 +9,14 @@
 
 ## 2. Conectar tu carpeta local con GitHub y subir
 
-En la terminal, desde la carpeta del proyecto (`primesoft-cbisa`), ejecuta (sustituye `TU-USUARIO` por tu usuario de GitHub y `primesoft-cbisa` por el nombre del repo si lo cambiaste):
+**Ya hay commits en `main`.** En la terminal, desde la carpeta del proyecto (`primesoft-cbisa`), ejecuta (sustituye `TU-USUARIO` por tu usuario de GitHub y `primesoft-cbisa` por el nombre del repo si lo cambiaste):
 
 ```bash
 git remote add origin https://github.com/TU-USUARIO/primesoft-cbisa.git
-git branch -M main
 git push -u origin main
 ```
+
+Si ya creaste el repo en GitHub vacío (con README o sin él), el primer push puede ser `git push -u origin main`. Si GitHub te sugiere `git pull --rebase origin main` antes, hazlo y luego `git push -u origin main`.
 
 Si GitHub te pide autenticación, usa un **Personal Access Token** (Settings > Developer settings > Personal access tokens) como contraseña, o configura SSH y usa la URL `git@github.com:TU-USUARIO/primesoft-cbisa.git` en lugar de la URL `https://...`.
 
