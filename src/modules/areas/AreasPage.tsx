@@ -114,10 +114,10 @@ export function AreasPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.1fr] gap-6">
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-4 py-4 sm:px-6">
             <div>
               <h1 className="text-sm font-black text-gray-900 uppercase tracking-widest">
                 {t("areas.title")}
@@ -129,7 +129,7 @@ export function AreasPage() {
               {t("areas.new")}
             </button>
           </div>
-          <div className="p-6 border-b border-gray-100">
+          <div className="border-b border-gray-100 p-4 sm:p-6">
             <label className={labelCls}>{t("areas.filterClient")}</label>
             <select
               className={inputCls}
@@ -199,12 +199,12 @@ export function AreasPage() {
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
             <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest">
               {editing ? t("areas.edit") : t("areas.create")}
             </h2>
           </div>
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5 p-4 sm:p-6">
             <div>
               <label className={labelCls}>{t("areas.client")}</label>
               <select

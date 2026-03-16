@@ -340,7 +340,14 @@ function SummaryMetric({
   return (
     <div className="text-center">
       <p className="text-xs text-stone-500">{title}</p>
-      <p className={classNames("mt-1 text-3xl font-black", accent ? "text-agro-primary" : "text-gray-900")}>{value}</p>
+      <p
+        className={classNames(
+          "mt-1 text-2xl font-black sm:text-3xl",
+          accent ? "text-agro-primary" : "text-gray-900"
+        )}
+      >
+        {value}
+      </p>
       <p className="text-xs text-stone-500">{subtitle}</p>
     </div>
   );
@@ -595,10 +602,10 @@ export function AnalisesPage() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.88fr_1.52fr]">
         <section className="overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between gap-4 border-b border-stone-200 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 px-4 py-4 sm:px-6">
             <div>
               <h1 className="text-sm font-black uppercase tracking-[0.25em] text-gray-900">{t("analises.title")}</h1>
               <p className="mt-1 text-sm text-stone-500">{t("analises.subtitle")}</p>
@@ -609,7 +616,7 @@ export function AnalisesPage() {
             </button>
           </div>
 
-          <div className="border-b border-stone-200 p-6">
+          <div className="border-b border-stone-200 p-4 sm:p-6">
             <label className={labelCls}>{t("analises.filterClient")}</label>
             <select
               className={inputCls}
@@ -661,10 +668,10 @@ export function AnalisesPage() {
         </section>
 
         <section className="space-y-6">
-          <div className="rounded-[28px] border border-stone-200 bg-[#f6f1ea] p-6 shadow-sm">
+          <div className="rounded-[28px] border border-stone-200 bg-[#f6f1ea] p-4 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-black text-gray-900">
+                <h2 className="text-lg font-black text-gray-900 sm:text-xl">
                   {editing ? t("analises.edit") : t("analises.create")}
                 </h2>
                 <p className="mt-1 text-sm text-stone-600">
@@ -855,7 +862,7 @@ export function AnalisesPage() {
                   <i className="fas fa-droplet" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-gray-900">Equilíbrio Nutricional</h3>
+                  <h3 className="text-xl font-black text-gray-900 sm:text-2xl">Equilíbrio Nutricional</h3>
                   <p className="text-sm text-stone-500">Leitura instantânea do que está adequado e do que precisa correção.</p>
                 </div>
               </div>
@@ -873,7 +880,7 @@ export function AnalisesPage() {
 
             {essentialsReady && previewResult && (
               <>
-                <section className="rounded-[24px] border border-stone-200 bg-white p-6 shadow-sm">
+                <section className="rounded-[24px] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
                   <SectionHeader
                     icon="fa-clipboard-check"
                     title="Recomendação Final"
@@ -942,7 +949,7 @@ export function AnalisesPage() {
                   ))}
                 </div>
 
-                <section className="rounded-[24px] border border-stone-200 bg-white p-6 shadow-sm">
+                <section className="rounded-[24px] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
                   <SectionHeader icon="fa-hill-rockslide" title="Calagem" />
                   <div className="grid gap-6 md:grid-cols-3 xl:grid-cols-7">
                     <SummaryMetric
@@ -984,7 +991,7 @@ export function AnalisesPage() {
                   </div>
                 </section>
 
-                <section className="rounded-[24px] border border-stone-200 bg-white p-6 shadow-sm">
+                <section className="rounded-[24px] border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
                   <SectionHeader
                     icon="fa-wheat-awn"
                     title={`Extração x Produção (${formatNumber(form.productividad_objetivo_bolsas_ha, 0)} bolsas/ha)`}

@@ -148,10 +148,10 @@ export function ParametrosPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="grid grid-cols-1 xl:grid-cols-[0.8fr_1.35fr] gap-6">
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
             <h1 className="text-sm font-black text-gray-900 uppercase tracking-widest">
               {t("parametros.versions")}
             </h1>
@@ -189,7 +189,7 @@ export function ParametrosPage() {
         </section>
 
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-4 py-4 sm:px-6">
             <div>
               <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest">
                 {t("parametros.globals")}
@@ -204,7 +204,7 @@ export function ParametrosPage() {
               </span>
             )}
           </div>
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6 p-4 sm:p-6">
             <div>
               <label className={labelCls}>{t("parametros.newVersionLabel")}</label>
               <input
