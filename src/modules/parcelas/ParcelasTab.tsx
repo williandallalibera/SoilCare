@@ -6,13 +6,23 @@ declare global {
   interface Window {
     google?: {
       maps: {
-        Map: new (el: HTMLElement, opts: object) => { setCenter: (c: object) => void; setZoom: (z: number) => void };
+        Map: new (el: HTMLElement, opts: object) => {
+          setCenter: (c: object) => void;
+          setZoom: (z: number) => void;
+          fitBounds: (b: any) => void;
+        };
         event: { addListener: (obj: object, ev: string, fn: (p: unknown) => void) => void };
-        geometry: { spherical: { computeArea: (path: { getLength: () => number; getAt: (i: number) => { lat: () => number; lng: () => number } }) => number } };
+        geometry: { spherical: { computeArea: (path: any) => number } };
         drawing: {
-          DrawingManager: new (opts: object) => { setMap: (m: unknown) => void };
+          DrawingManager: new (opts: object) => {
+            setMap: (m: any) => void;
+            setDrawingMode: (mode: any) => void;
+          };
           OverlayType: { POLYGON: string };
         };
+        Polygon: new (opts: object) => any;
+        LatLngBounds: new () => any;
+        LatLng: new (lat: number, lng: number) => any;
       };
     };
     initParcelasMap?: () => void;
@@ -28,6 +38,7 @@ interface ParcelaRow {
   estado: string;
   id_cliente: string;
   cliente_nombre: string;
+  geom: any | null;
   created_at: string;
 }
 
@@ -39,6 +50,18 @@ const ESTADOS = [
   { value: "activo", label: "Activo" },
   { value: "inactivo", label: "Inactivo" },
 ];
+
+const inputCls = "w-full px-3 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:border-agro-primary focus:ring-2 focus:ring-agro-primary/20 outline-none transition-all";
+const labelCls = "block text-xs font-bold text-gray-600 mb-1";
+const btnPrimary = "inline-flex items-center gap-2 px-4 py-2 bg-agro-primary text-white text-sm font-bold rounded-xl shadow shadow-agro-primary/20 hover:opacity-90 transition-all active:scale-95";
+const btnSecondary = "inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 text-sm font-bold rounded-xl hover:bg-gray-50 transition-all";
+
+function getStaticMapUrl(geom: any, apiKey: string | null) {
+  if (!geom || !apiKey || geom.type !== "Polygon" || !geom.coordinates[0]) return null;
+  const coords = geom.coordinates[0];
+  const path = coords.map((c: any) => `${c[1]},${c[0]}`).join("|");
+  return `https://maps.googleapis.com/maps/api/staticmap?size=100x100&maptype=satellite&path=color:0xff0000ff|fillcolor:0xff000044|weight:2|${path}&key=${apiKey}`;
+}
 
 export function ParcelasTab() {
   const [rows, setRows] = useState<ParcelaRow[]>([]);
@@ -64,12 +87,33 @@ export function ParcelasTab() {
   const mapInstanceRef = useRef<unknown>(null);
   const polygonRef = useRef<unknown>(null);
   const drawingManagerRef = useRef<unknown>(null);
+  const [historyState, setHistoryState] = useState({ list: [] as (any[] | null)[], step: -1 });
+  const isRedrawing = useRef(false);
+  const saveTimeout = useRef<any>(null);
+
+  const saveHistoryStateRef = useRef<any>(null);
+  const updateAreaDisplayRef = useRef<any>(null);
+
+  useEffect(() => {
+    saveHistoryStateRef.current = saveHistoryState;
+    updateAreaDisplayRef.current = updateAreaDisplay;
+  });
 
   const loadParcelas = async () => {
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      console.log("ParcelasTab: Review Mode - Injecting mock parcelas");
+      setRows([{
+        id: "pa-1", nombre_parcela: "Lote 1", localidad: "San Alberto", area_prevista_ha: 105, area_real_ha: 100, estado: "activo", id_cliente: "cl-1", cliente_nombre: "Fazenda Santa Maria", geom: null, created_at: new Date().toISOString()
+      }]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("parcelas")
-      .select("id, nombre_parcela, localidad, area_prevista_ha, area_real_ha, estado, id_cliente, created_at")
+      .select("id, nombre_parcela, localidad, area_prevista_ha, area_real_ha, estado, id_cliente, geom, created_at")
       .order("created_at", { ascending: false });
+
     if (!error && data) {
       const ids = [...new Set((data as any[]).map((d) => d.id_cliente))];
       let names: Record<string, string> = {};
@@ -87,6 +131,7 @@ export function ParcelasTab() {
           estado: d.estado,
           id_cliente: d.id_cliente,
           cliente_nombre: names[d.id_cliente] ?? "",
+          geom: d.geom,
           created_at: d.created_at,
         }))
       );
@@ -96,11 +141,24 @@ export function ParcelasTab() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
       await loadParcelas();
+
+      const envKey = (import.meta as any).env.VITE_GOOGLE_MAPS_API_KEY ?? null;
+
+      if (isReviewMode) {
+        setClientes([{ id: "cl-1", nombre: "Fazenda Santa Maria" }]);
+        setApiKey(envKey || "AIzaSyBiZxljlMaoLLgpqN1qkMLhawWlF0nkQh4");
+        setLoading(false);
+        return;
+      }
+
       const { data } = await supabase.from("clientes").select("id, nombre").eq("estado", "activo");
       if (data) setClientes(data as any);
+
       const { data: int } = await supabase.from("integraciones").select("api_google_maps").limit(1).maybeSingle();
-      setApiKey((int as any)?.api_google_maps ?? null);
+      const dbKey = (int as any)?.api_google_maps ?? null;
+      setApiKey(dbKey || envKey || "AIzaSyBiZxljlMaoLLgpqN1qkMLhawWlF0nkQh4");
       setLoading(false);
     };
     load();
@@ -130,6 +188,10 @@ export function ParcelasTab() {
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=drawing,geometry&callback=initParcelasMap`;
     script.async = true;
+    script.onerror = () => {
+      console.error("Google Maps failed to load. Check your API Key.");
+      setLoading(false);
+    };
     window.initParcelasMap = () => {
       setMapReady(true);
     };
@@ -148,39 +210,232 @@ export function ParcelasTab() {
   function initMap() {
     const g = window.google;
     if (!mapRef.current || !g) return;
+
     const map = new g.maps.Map(mapRef.current, {
       center: PARAGUAY_CENTER,
       zoom: DEFAULT_ZOOM,
+      mapTypeId: 'satellite'
     });
     mapInstanceRef.current = map;
-    const drawingManager = new g.maps.drawing.DrawingManager({
-      drawingMode: g.maps.drawing.OverlayType.POLYGON,
-      drawingControl: false,
-      polygonOptions: {
-        fillColor: "rgba(100, 180, 255, 0.4)",
-        strokeColor: "#64b4ff",
-        clickable: true,
-        editable: true,
-      },
-    });
-    (drawingManager as { setMap: (m: unknown) => void }).setMap(map);
-    drawingManagerRef.current = drawingManager;
-    g.maps.event.addListener(drawingManager, "polygoncomplete", (polygon: { getPath: () => { getLength: () => number; getAt: (i: number) => { lat: () => number; lng: () => number } } }) => {
-      polygonRef.current = polygon;
-      const path = polygon.getPath();
-      const areaM2 = g.maps.geometry.spherical.computeArea(path);
-      const areaHa = Number((areaM2 / 10000).toFixed(3));
-      setForm((f) => ({ ...f, area_prevista_ha: String(areaHa) }));
+
+    const polygonOptions = {
+      fillColor: "rgba(100, 180, 255, 0.4)",
+      strokeColor: "#64b4ff",
+      strokeWeight: 2,
+      clickable: true,
+      editable: true,
+    };
+
+    // Removemos o DrawingManager para assumir o controle ponto a ponto.
+
+    if (editing?.geom && editing.geom.type === "Polygon") {
+      const coords = editing.geom.coordinates[0].map((c: any) => ({ lat: c[1], lng: c[0] }));
+      const poly = new g.maps.Polygon({
+        paths: coords,
+        ...polygonOptions
+      });
+      poly.setMap(map);
+      polygonRef.current = poly;
+
+      const path = poly.getPath();
+      g.maps.event.addListener(path, "insert_at", () => {
+        console.log("Map: insert_at");
+        saveHistoryStateRef.current?.(poly);
+      });
+      g.maps.event.addListener(path, "remove_at", () => {
+        console.log("Map: remove_at");
+        saveHistoryStateRef.current?.(poly);
+      });
+      g.maps.event.addListener(path, "set_at", () => {
+        console.log("Map: set_at");
+        saveHistoryStateRef.current?.(poly);
+      });
+
+      // Initial state
+      const initialCoords = coords.map((c: any) => ({ lat: c.lat, lng: c.lng }));
+      setHistoryState({ list: [initialCoords], step: 0 });
+
+      const bounds = new g.maps.LatLngBounds();
+      coords.forEach((c: any) => bounds.extend(c));
+      map.fitBounds(bounds);
+    }
+
+    // Controle customizado para desenho e edição Ponto-a-Ponto (Undo dinâmico)
+    g.maps.event.addListener(map, "click", (e: any) => {
+      let p = polygonRef.current as any;
+
+      if (!p) {
+        // Inicia um novo polígono com o primeiro ponto
+        p = new g.maps.Polygon({
+          paths: [e.latLng],
+          ...polygonOptions
+        });
+        p.setMap(map);
+        polygonRef.current = p;
+
+        const path = p.getPath();
+        g.maps.event.addListener(path, "insert_at", () => {
+          saveHistoryStateRef.current?.(p);
+        });
+        g.maps.event.addListener(path, "remove_at", () => {
+          saveHistoryStateRef.current?.(p);
+        });
+        g.maps.event.addListener(path, "set_at", () => {
+          saveHistoryStateRef.current?.(p);
+        });
+
+        // Salva imediatamente o estado contendo o 1º ponto
+        saveHistoryStateRef.current?.(p, true);
+      } else {
+        // Se já existe, apenas adiciona o ponto no final (dispara insert_at e salva no histórico)
+        const path = p.getPath();
+        path.push(e.latLng);
+      }
     });
   }
 
-  const clearMap = () => {
+  // Saving state for undo/redo
+  const saveHistoryState = (poly: any, immediate = false) => {
+    if (isRedrawing.current) return;
+
+    const save = () => {
+      console.log("saveHistoryState: executing save...");
+      // poly might be null if we are saving an empty state (clear)
+      let currentCoords: any[] | null = null;
+      if (poly) {
+        const path = poly.getPath();
+        currentCoords = [];
+        for (let i = 0; i < path.getLength(); i++) {
+          const pt = path.getAt(i);
+          currentCoords.push({ lat: pt.lat(), lng: pt.lng() });
+        }
+      }
+
+      setHistoryState(prev => {
+        const last = prev.list[prev.step];
+        if (last && currentCoords && JSON.stringify(last) === JSON.stringify(currentCoords)) {
+          console.log("saveHistoryState: identical state, ignoring");
+          return prev;
+        }
+
+        const newList = prev.list.slice(0, prev.step + 1);
+        newList.push(currentCoords);
+        console.log("saveHistoryState: saved. new step =", newList.length - 1, newList);
+        return { list: newList, step: newList.length - 1 };
+      });
+      if (poly) updateAreaDisplayRef.current?.(poly);
+      else setForm(f => ({ ...f, area_prevista_ha: "" }));
+    };
+
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    if (immediate) {
+      save();
+    } else {
+      saveTimeout.current = setTimeout(save, 500);
+    }
+  };
+
+  const updateAreaDisplay = (poly: any) => {
+    const g = window.google;
+    if (!g) return;
+    const areaM2 = g.maps.geometry.spherical.computeArea(poly.getPath());
+    const areaHa = Number((areaM2 / 10000).toFixed(3));
+    setForm((f) => ({ ...f, area_prevista_ha: String(areaHa) }));
+  }
+
+  const handleUndo = () => {
+    console.log("handleUndo: current step", historyState.step);
+    if (historyState.step >= 0) {
+      const newStep = historyState.step - 1;
+      setHistoryState(prev => ({ ...prev, step: newStep }));
+      const coords = newStep >= 0 ? historyState.list[newStep] : null;
+      if (!coords) {
+        clearMap(false); // clear map but don't reset history list
+      } else {
+        redrawPolygon(coords);
+      }
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyState.step < historyState.list.length - 1) {
+      const newStep = historyState.step + 1;
+      setHistoryState(prev => ({ ...prev, step: newStep }));
+
+      // Se estava vazio e vai refazer o primeiro, precisa garantir que o polígono existe
+      // (caso o usuário tenha limpado o mapa via Undo)
+      const coords = historyState.list[newStep];
+      if (!coords) return;
+
+      if (!polygonRef.current) {
+        reconstructPolygon(coords);
+      } else {
+        redrawPolygon(coords);
+      }
+    }
+  };
+
+  const reconstructPolygon = (coords: any[] | null) => {
+    if (!coords) return;
+    const g = window.google;
+    if (!g || !mapInstanceRef.current) return;
+    const poly = new g.maps.Polygon({
+      paths: coords,
+      fillColor: "rgba(100, 180, 255, 0.4)",
+      strokeColor: "#64b4ff",
+      strokeWeight: 2,
+      clickable: true,
+      editable: true,
+    });
+    poly.setMap(mapInstanceRef.current as any);
+    polygonRef.current = poly;
+
+    const path = poly.getPath();
+    g.maps.event.addListener(path, "insert_at", () => saveHistoryStateRef.current?.(poly));
+    g.maps.event.addListener(path, "remove_at", () => saveHistoryStateRef.current?.(poly));
+    g.maps.event.addListener(path, "set_at", () => saveHistoryStateRef.current?.(poly));
+
+    updateAreaDisplayRef.current?.(poly);
+  };
+
+  const redrawPolygon = (coords: any[] | null) => {
+    const p = polygonRef.current as any;
+    if (!p || !coords) return;
+    isRedrawing.current = true;
+
+    // Evita resetar toda a MVCArray usando setPath (pois destrói os listeners). 
+    // Em vez disso, limpamos a path e repovoamos.
+    const path = p.getPath();
+    const g = window.google;
+    if (!g) return;
+
+    path.clear();
+    coords.forEach((c: any) => {
+      const isLatLng = typeof c.lat === "function";
+      path.push(isLatLng ? c : new g.maps.LatLng(c.lat, c.lng));
+    });
+
+    updateAreaDisplay(p);
+    setTimeout(() => {
+      isRedrawing.current = false;
+    }, 100);
+  };
+
+  const clearMap = (resetHistory = true) => {
     const p = polygonRef.current as { setMap: (m: null) => void } | null;
     if (p) {
       p.setMap(null);
       polygonRef.current = null;
     }
+    if (resetHistory) {
+      setHistoryState({ list: [], step: -1 });
+    }
     setForm((f) => ({ ...f, area_prevista_ha: "" }));
+  };
+
+  const handleManualClear = () => {
+    saveHistoryState(null, true); // save an empty state in history
+    clearMap(false); // clear map but keep history list
   };
 
   const miraMap = () => {
@@ -217,6 +472,7 @@ export function ParcelasTab() {
       if (dm) dm.setMap(null);
       drawingManagerRef.current = null;
     }
+    setHistoryState({ list: [], step: -1 });
     setMapReady(false);
     setShowModal(false);
   };
@@ -226,18 +482,15 @@ export function ParcelasTab() {
     setShowModal(true);
   };
 
-  const handleEdit = async (row: ParcelaRow) => {
-    const { data } = await supabase.from("parcelas").select("*").eq("id", row.id).single();
-    if (!data) return;
-    const d = data as any;
+  const handleEdit = (row: ParcelaRow) => {
     setEditing(row);
     setForm({
-      id_cliente: d.id_cliente,
-      nombre_parcela: d.nombre_parcela,
-      localidad: d.localidad ?? "",
-      area_prevista_ha: d.area_prevista_ha != null ? String(d.area_prevista_ha) : "",
-      area_real_ha: d.area_real_ha != null ? String(d.area_real_ha) : "",
-      estado: d.estado,
+      id_cliente: row.id_cliente,
+      nombre_parcela: row.nombre_parcela,
+      localidad: row.localidad ?? "",
+      area_prevista_ha: row.area_prevista_ha != null ? String(row.area_prevista_ha) : "",
+      area_real_ha: row.area_real_ha != null ? String(row.area_real_ha) : "",
+      estado: row.estado,
     });
     setShowModal(true);
   };
@@ -253,6 +506,14 @@ export function ParcelasTab() {
       for (let i = 0; i < path.getLength(); i++) {
         const pt = path.getAt(i);
         coords.push([pt.lng(), pt.lat()]);
+      }
+      // Close the ring for GeoJSON standard
+      if (coords.length > 2) {
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          coords.push([first[0], first[1]]);
+        }
       }
       geom = { type: "Polygon", coordinates: [coords] };
     }
@@ -283,7 +544,7 @@ export function ParcelasTab() {
       { key: "area_prevista_ha", header: "Área prevista (ha)" },
       { key: "area_real_ha", header: "Área real (ha)" },
       { key: "estado", header: "Estado" },
-      { key: "created_at", header: "Fecha creación" },
+      { key: "created_at", header: "Fecha criação" },
     ];
     const csv =
       cols.map((c) => c.header).join(",") +
@@ -308,16 +569,20 @@ export function ParcelasTab() {
     URL.revokeObjectURL(url);
   };
 
-  if (loading) return <span>Cargando parcelas...</span>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400">
+      <i className="fas fa-spinner fa-spin mr-2" />Cargando parcelas...
+    </div>
+  );
 
   return (
     <div>
-      <h5 className="mb-3">Parcelas</h5>
-      <div className="row mb-3">
-        <div className="col-md-2">
-          <label className="form-label">Estado</label>
+      {/* ── Filtros ── */}
+      <div className="flex flex-wrap gap-3 mb-5 items-end">
+        <div className="min-w-[140px]">
+          <label className={labelCls}>Estado</label>
           <select
-            className="form-control form-control-sm"
+            className={inputCls}
             value={filterEstado}
             onChange={(e) => setFilterEstado(e.target.value)}
           >
@@ -328,10 +593,10 @@ export function ParcelasTab() {
             ))}
           </select>
         </div>
-        <div className="col-md-3">
-          <label className="form-label">Cliente</label>
+        <div className="min-w-[180px]">
+          <label className={labelCls}>Cliente</label>
           <select
-            className="form-control form-control-sm"
+            className={inputCls}
             value={filterCliente}
             onChange={(e) => setFilterCliente(e.target.value)}
           >
@@ -343,61 +608,82 @@ export function ParcelasTab() {
             ))}
           </select>
         </div>
-        <div className="col-md-3">
-          <label className="form-label">Buscar</label>
-          <input
-            type="text"
-            className="form-control form-control-sm"
-            placeholder="Nombre o localidad"
-            value={filterBusqueda}
-            onChange={(e) => setFilterBusqueda(e.target.value)}
-          />
+        <div className="flex-1 min-w-[200px]">
+          <label className={labelCls}>Buscar</label>
+          <div className="relative">
+            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
+            <input
+              type="text"
+              className={`${inputCls} pl-8`}
+              placeholder="Nombre o localidade..."
+              value={filterBusqueda}
+              onChange={(e) => setFilterBusqueda(e.target.value)}
+            />
+          </div>
         </div>
-        <div className="col-md-4 d-flex align-items-end gap-2">
-          <button type="button" className="btn btn-success btn-sm" onClick={handleNuevo}>
-            <i className="fas fa-plus mr-1" />
-            Nuevo
+        <div className="flex gap-2">
+          <button type="button" className={btnPrimary} onClick={handleNuevo}>
+            <i className="fas fa-plus text-xs" /> Nuevo
           </button>
-          <button type="button" className="btn btn-outline-secondary btn-sm" onClick={exportCsv}>
-            <i className="fas fa-download mr-1" />
-            Exportar CSV
+          <button type="button" className={btnSecondary} onClick={exportCsv}>
+            <i className="fas fa-download text-xs" /> Exportar CSV
           </button>
         </div>
       </div>
-      <div className="table-responsive">
-        <table className="table table-sm table-striped table-hover">
-          <thead className="thead-dark">
-            <tr>
-              <th>Nombre parcela</th>
-              <th>Cliente</th>
-              <th>Localidad</th>
-              <th>Área prevista (ha)</th>
-              <th>Área real (ha)</th>
-              <th>Estado</th>
-              <th>Fecha creación</th>
-              <th />
+
+      {/* ── Tabela ── */}
+      <div className="overflow-x-auto rounded-xl border border-gray-100">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Mapa</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Nombre parcela</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Cliente</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Localidad</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Área prev (ha)</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Área real (ha)</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Estado</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Fecha</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-gray-50">
             {filteredRows.map((r) => (
-              <tr key={r.id} className={r.estado === "inactivo" ? "table-secondary" : ""}>
-                <td>{r.nombre_parcela}</td>
-                <td>{r.cliente_nombre}</td>
-                <td>{r.localidad ?? "-"}</td>
-                <td>{formatDecimal(r.area_prevista_ha)}</td>
-                <td>{formatDecimal(r.area_real_ha)}</td>
-                <td>
-                  <span
-                    className={`badge ${r.estado === "activo" ? "badge-success" : "badge-secondary"}`}
-                  >
-                    {r.estado === "activo" ? "Activo" : "Inactivo"}
-                  </span>
+              <tr key={r.id} className={`hover:bg-gray-50 transition-colors ${r.estado === "inactivo" ? "opacity-60" : ""}`}>
+                <td className="px-4 py-3">
+                  <div className="w-12 h-12 bg-agro-primary/10 rounded-lg flex items-center justify-center border border-gray-100 overflow-hidden shadow-sm">
+                    {getStaticMapUrl(r.geom, apiKey) ? (
+                      <img
+                        src={getStaticMapUrl(r.geom, apiKey)!}
+                        alt="Mapa"
+                        className="w-full h-full object-cover shadow-inner"
+                      />
+                    ) : (
+                      <i className="fas fa-map-marked-alt text-agro-primary opacity-30 text-lg" />
+                    )}
+                  </div>
                 </td>
-                <td>{new Date(r.created_at).toLocaleDateString("es-PY")}</td>
-                <td>
+                <td className="px-4 py-3 font-medium text-gray-900">{r.nombre_parcela}</td>
+                <td className="px-4 py-3 text-gray-600">{r.cliente_nombre}</td>
+                <td className="px-4 py-3 text-gray-500">{r.localidad ?? "—"}</td>
+                <td className="px-4 py-3 text-gray-900 font-mono">{formatDecimal(r.area_prevista_ha)}</td>
+                <td className="px-4 py-3 text-gray-900 font-mono">{formatDecimal(r.area_real_ha)}</td>
+                <td className="px-4 py-3">
+                  {r.estado === "activo" ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                      Activo
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500">
+                      Inactivo
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-500">{new Date(r.created_at).toLocaleDateString("es-PY")}</td>
+                <td className="px-4 py-3 text-right">
                   <button
                     type="button"
-                    className="btn btn-xs btn-outline-success"
+                    className="text-xs font-bold text-agro-primary hover:underline"
                     onClick={() => handleEdit(r)}
                   >
                     Editar
@@ -407,143 +693,151 @@ export function ParcelasTab() {
             ))}
           </tbody>
         </table>
+        {filteredRows.length === 0 && (
+          <div className="py-12 text-center text-gray-400">
+            <i className="fas fa-map-marked-alt mb-2 text-2xl block" />
+            No hay parcelas registradas.
+          </div>
+        )}
       </div>
-      {filteredRows.length === 0 && <p className="text-muted">No hay registros.</p>}
 
+      {/* ── Modal ── */}
       {showModal && (
-        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="modal-dialog modal-xl">
-            <div className="modal-content">
-              <div className="modal-header bg-success text-white">
-                <h5 className="modal-title">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-agro-primary/10 text-agro-primary rounded-lg flex items-center justify-center">
+                  <i className="fas fa-map-marker-alt text-sm" />
+                </div>
+                <h3 className="font-bold text-gray-900">
                   {editing ? "Editar parcela" : "Nueva parcela"}
-                </h5>
-                <button type="button" className="close text-white" onClick={resetForm}>
-                  <span aria-hidden="true">&times;</span>
+                </h3>
+              </div>
+              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <i className="fas fa-times" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 overflow-y-auto space-y-6">
+                {!apiKey && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm flex items-center gap-3">
+                    <i className="fas fa-exclamation-triangle text-amber-500" />
+                    Configure la API de Google Maps en Ajustes &gt; Integraciones para usar el mapa.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>Cliente *</label>
+                    <select
+                      className={inputCls}
+                      value={form.id_cliente}
+                      onChange={(e) => setForm({ ...form, id_cliente: e.target.value })}
+                      required
+                    >
+                      <option value="">Seleccione</option>
+                      {clientes.map((c) => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Nombre parcela *</label>
+                    <input
+                      className={inputCls}
+                      placeholder="Nombre de la parcela"
+                      value={form.nombre_parcela}
+                      onChange={(e) => setForm({ ...form, nombre_parcela: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Localidad</label>
+                    <input
+                      className={inputCls}
+                      placeholder="Localidad"
+                      value={form.localidad}
+                      onChange={(e) => setForm({ ...form, localidad: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {apiKey && (
+                  <div className="space-y-2">
+                    <label className={labelCls}>Mapa – dibuje el polígono en el mapa</label>
+                    <div className="relative rounded-2xl overflow-hidden border border-gray-200">
+                      <div
+                        ref={mapRef}
+                        style={{ height: "400px", width: "100%", background: "#f8f9fa" }}
+                      />
+                      <div className="absolute top-3 left-3 flex gap-2">
+                        <button type="button" className={`px-3 py-1.5 bg-white shadow-md rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-2 border border-gray-100 transition-all ${historyState.step >= 0 ? "text-gray-700" : "text-gray-300 cursor-not-allowed"}`} onClick={handleUndo} disabled={historyState.step < 0}>
+                          <i className="fas fa-undo" /> Deshacer
+                        </button>
+                        <button type="button" className={`px-3 py-1.5 bg-white shadow-md rounded-lg text-xs font-bold hover:bg-gray-50 flex items-center gap-2 border border-gray-100 transition-all ${historyState.step < historyState.list.length - 1 ? "text-gray-700" : "text-gray-300 cursor-not-allowed"}`} onClick={handleRedo} disabled={historyState.step >= historyState.list.length - 1}>
+                          <i className="fas fa-redo" /> Rehacer
+                        </button>
+                        <button type="button" className="px-3 py-1.5 bg-white shadow-md rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 border border-gray-100" onClick={miraMap}>
+                          <i className="fas fa-location-arrow text-agro-primary" /> Mi ubicación
+                        </button>
+                        <button type="button" className="px-3 py-1.5 bg-white shadow-md rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 flex items-center gap-2 border border-gray-100" onClick={handleManualClear}>
+                          <i className="fas fa-trash-alt text-red-500" /> Limpiar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className={labelCls}>Área prevista (ha)</label>
+                    <input
+                      type="text"
+                      className={`${inputCls} bg-gray-50 font-mono`}
+                      readOnly
+                      value={form.area_prevista_ha}
+                      placeholder="Automático (mapa)"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Área real (ha)</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      className={inputCls}
+                      placeholder="0.000"
+                      value={form.area_real_ha}
+                      onChange={(e) => setForm({ ...form, area_real_ha: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Estado</label>
+                    <select
+                      className={inputCls}
+                      value={form.estado}
+                      onChange={(e) => setForm({ ...form, estado: e.target.value })}
+                    >
+                      <option value="activo">Activo</option>
+                      <option value="inactivo">Inactivo</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+                <button type="button" className={btnSecondary} onClick={resetForm}>Cancelar</button>
+                <button type="submit" className={btnPrimary} disabled={saving}>
+                  {saving ? (
+                    <><i className="fas fa-spinner fa-spin text-xs" /> Guardando...</>
+                  ) : editing ? "Guardar cambios" : "Crear parcela"}
                 </button>
               </div>
-              <form onSubmit={handleSubmit}>
-                <div className="modal-body">
-                  {!apiKey && (
-                    <div className="alert alert-warning">
-                      Configure la API de Google Maps en Ajustes &gt; Integraciones.
-                    </div>
-                  )}
-                  <div className="row">
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Cliente</label>
-                        <select
-                          className="form-control"
-                          value={form.id_cliente}
-                          onChange={(e) => setForm({ ...form, id_cliente: e.target.value })}
-                          required
-                        >
-                          <option value="">Seleccione</option>
-                          {clientes.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Nombre parcela</label>
-                        <input
-                          className="form-control"
-                          placeholder="Nombre de la parcela"
-                          value={form.nombre_parcela}
-                          onChange={(e) => setForm({ ...form, nombre_parcela: e.target.value })}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Localidad</label>
-                        <input
-                          className="form-control"
-                          placeholder="Localidad"
-                          value={form.localidad}
-                          onChange={(e) => setForm({ ...form, localidad: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  {apiKey && (
-                    <>
-                      <div className="form-group">
-                        <label>Mapa – dibuje el polígono en el mapa</label>
-                        <div
-                          ref={mapRef}
-                          style={{ height: "400px", width: "100%", background: "#e9ecef" }}
-                        />
-                      </div>
-                      <div className="mb-2">
-                        <button type="button" className="btn btn-sm btn-outline-primary mr-2" onClick={miraMap}>
-                          Mira
-                        </button>
-                        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={clearMap}>
-                          Clear
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  <div className="row">
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Área prevista (ha)</label>
-                        <input
-                          type="text"
-                          className="form-control bg-light"
-                          readOnly
-                          value={form.area_prevista_ha}
-                          placeholder="Se calcula al cerrar el polígono"
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Área real (ha)</label>
-                        <input
-                          type="number"
-                          step="0.001"
-                          className="form-control"
-                          placeholder="Ingrese el área real"
-                          value={form.area_real_ha}
-                          onChange={(e) => setForm({ ...form, area_real_ha: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-4">
-                      <div className="form-group">
-                        <label>Estado</label>
-                        <select
-                          className="form-control"
-                          value={form.estado}
-                          onChange={(e) => setForm({ ...form, estado: e.target.value })}
-                        >
-                          <option value="activo">Activo</option>
-                          <option value="inactivo">Inactivo</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                    Cancelar
-                  </button>
-                  <button type="submit" className="btn btn-success" disabled={saving}>
-                    {saving ? "Guardando..." : editing ? "Alterar" : "Crear"}
-                  </button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
+}

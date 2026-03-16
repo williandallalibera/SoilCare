@@ -33,7 +33,7 @@ export async function generarPdfPropuesta(
     .maybeSingle();
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const pageW = doc.getPageWidth();
+  const pageW = (doc.internal.pageSize as any).getWidth() as number;
   let y = 18;
 
   const empresa = emp as { ruc?: string; direccion?: string; telefono?: string } | null;
@@ -91,23 +91,23 @@ export async function generarPdfPropuesta(
     const nombreProducto = (it as any).productos?.nombre ?? (it as any).nombre ?? "-";
     const row = conMargenYCosto
       ? [
-          nombreProducto.substring(0, 20),
-          formatNum(it.cantidad),
-          formatNum(it.dosis_ha),
-          formatNum(it.area_tratada),
-          formatNum(it.costo_ha),
-          formatNum(it.importe_total),
-          formatNum(it.precio_compra_base),
-          formatNum(it.margen_base),
-        ]
+        nombreProducto.substring(0, 20),
+        formatNum(it.cantidad),
+        formatNum(it.dosis_ha),
+        formatNum(it.area_tratada),
+        formatNum(it.costo_ha),
+        formatNum(it.importe_total),
+        formatNum(it.precio_compra_base),
+        formatNum(it.margen_base),
+      ]
       : [
-          nombreProducto.substring(0, 28),
-          formatNum(it.cantidad),
-          formatNum(it.dosis_ha),
-          formatNum(it.area_tratada),
-          formatNum(it.costo_ha),
-          formatNum(it.importe_total),
-        ];
+        nombreProducto.substring(0, 28),
+        formatNum(it.cantidad),
+        formatNum(it.dosis_ha),
+        formatNum(it.area_tratada),
+        formatNum(it.costo_ha),
+        formatNum(it.importe_total),
+      ];
     const colW = conMargenYCosto ? colWidths : colWidths;
     row.forEach((cell, i) => {
       doc.text(String(cell).substring(0, 14), x, y);

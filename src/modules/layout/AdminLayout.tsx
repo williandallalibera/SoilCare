@@ -1,256 +1,189 @@
-import { Outlet, Routes, Route, Navigate, Link } from "react-router-dom";
+import { Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { RoleRoute } from "../auth/RoleRoute";
-import { AjustesPage } from "../ajustes/AjustesPage";
-import { ProductosPage } from "../productos/ProductosPage";
-import { CRMPage } from "../crm/CRMPage";
-import { ParcelasPage } from "../parcelas/ParcelasPage";
-import { MonitoreoPage } from "../monitoreo/MonitoreoPage";
-import { AgenteIAPage } from "../agente-ia/AgenteIAPage";
-import { EspacioClientePage } from "../espacio-cliente/EspacioClientePage";
-
-function DashboardPage() {
-  return (
-    <section className="content">
-      <div className="container-fluid">
-        <div className="row">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header bg-success text-white">
-                <h3 className="card-title mb-0">Panel principal</h3>
-              </div>
-              <div className="card-body">
-                <p>
-                  Bienvenido al sistema de monitoreo agrícola Primesoft CBISA.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
+import { useState } from "react";
+import { DashboardPage } from "../dashboard/DashboardPage";
+import { ClientesPage } from "../clientes/ClientesPage";
+import { AreasPage } from "../areas/AreasPage";
+import { AnalisesPage } from "../analises/AnalisesPage";
+import { ParametrosPage } from "../parametros/ParametrosPage";
+import { UsuariosPage } from "../usuarios/UsuariosPage";
+import brandLogo from "../../assets/soil-care-brand.svg";
+import { LanguageSwitcher } from "../i18n/LanguageSwitcher";
+import { useI18n } from "../i18n/I18nContext";
 
 export function AdminLayout() {
   const { perfil, signOut } = useAuth();
+  const { t } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const menuItems = [
+    { path: "/app", icon: "fas fa-gauge-high", label: t("layout.menu.dashboard"), roles: ["admin", "operador"] },
+    { path: "/app/clientes", icon: "fas fa-users", label: t("layout.menu.clientes"), roles: ["admin", "operador"] },
+    { path: "/app/areas", icon: "fas fa-draw-polygon", label: t("layout.menu.areas"), roles: ["admin", "operador"] },
+    { path: "/app/analises", icon: "fas fa-vial-circle-check", label: t("layout.menu.analises"), roles: ["admin", "operador"] },
+    { path: "/app/parametros", icon: "fas fa-sliders", label: t("layout.menu.parametros"), roles: ["admin"] },
+    { path: "/app/usuarios", icon: "fas fa-user-shield", label: t("layout.menu.usuarios"), roles: ["admin"] },
+  ];
+
+  const filteredMenu = menuItems.filter((item) =>
+    perfil?.perfil_acceso ? item.roles.includes(perfil.perfil_acceso) : false
+  );
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      navigate("/login", { replace: true });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
-    <div className="wrapper">
-      <nav className="main-header navbar navbar-expand navbar-white navbar-light">
-        <ul className="navbar-nav">
-          <li className="nav-item">
-            <a className="nav-link" data-widget="pushmenu" href="#">
-              <i className="fas fa-bars" />
-            </a>
-          </li>
-          <li className="nav-item d-none d-sm-inline-block">
-            <span className="nav-link">Primesoft CBISA</span>
-          </li>
-        </ul>
-        <ul className="navbar-nav ml-auto">
-          <li className="nav-item dropdown user-menu">
-            <a href="#" className="nav-link dropdown-toggle">
-              <span className="d-none d-md-inline">
-                {perfil?.nombre ?? "Usuario"}
-              </span>
-            </a>
-          </li>
-          <li className="nav-item">
-            <button
-              className="btn btn-outline-danger btn-sm ml-2"
-              onClick={() => signOut()}
-            >
-              <i className="fas fa-sign-out-alt mr-1" />
-              Salir
-            </button>
-          </li>
-        </ul>
-      </nav>
-
-      <aside className="main-sidebar sidebar-dark-success elevation-4">
-        <Link to="/app" className="brand-link text-center">
-          <span className="brand-text font-weight-light">Primesoft CBISA</span>
-        </Link>
-
-        <div className="sidebar">
-          <nav className="mt-2">
-            <ul
-              className="nav nav-pills nav-sidebar flex-column"
-              role="menu"
-              data-accordion="false"
-            >
-              {perfil?.perfil_acceso === "cliente" ? (
-                <>
-                  <li className="nav-item">
-                    <Link to="/app/espacio-cliente" className="nav-link">
-                      <i className="nav-icon fas fa-user-circle" />
-                      <p>Espacio del Cliente</p>
-                    </Link>
-                  </li>
-                </>
-              ) : (
-                <>
-                  <li className="nav-item">
-                    <Link to="/app" className="nav-link">
-                      <i className="nav-icon fas fa-tachometer-alt" />
-                      <p>Dashboard</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/ajustes" className="nav-link">
-                      <i className="nav-icon fas fa-cogs" />
-                      <p>Ajustes</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/productos" className="nav-link">
-                      <i className="nav-icon fas fa-boxes" />
-                      <p>Productos</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/crm" className="nav-link">
-                      <i className="nav-icon fas fa-users" />
-                      <p>CRM</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/parcelas" className="nav-link">
-                      <i className="nav-icon fas fa-map" />
-                      <p>Parcelas</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/monitoreo" className="nav-link">
-                      <i className="nav-icon fas fa-seedling" />
-                      <p>Monitoreo</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/agente-ia" className="nav-link">
-                      <i className="nav-icon fas fa-robot" />
-                      <p>Agente de IA</p>
-                    </Link>
-                  </li>
-                  <li className="nav-item">
-                    <Link to="/app/espacio-cliente" className="nav-link">
-                      <i className="nav-icon fas fa-user-circle" />
-                      <p>Espacio del Cliente</p>
-                    </Link>
-                  </li>
-                </>
-              )}
-            </ul>
-          </nav>
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <aside className={`bg-slate-900 text-white w-64 flex-shrink-0 transition-all duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-64 absolute h-full ring-0'} z-50`}>
+        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+          <img
+            src={brandLogo}
+            alt="Soil Care logo"
+            className="h-12 w-12 rounded-xl bg-white/5 object-contain p-1"
+          />
+          <div className="min-w-0">
+            <span className="block font-bold text-lg tracking-tight">Soil Care</span>
+            <span className="block text-[11px] uppercase tracking-[0.18em] text-slate-400">
+              {t("brand.tagline")}
+            </span>
+          </div>
         </div>
+
+        <nav className="p-4 space-y-1">
+          {filteredMenu.map((item) => {
+            const isActive = location.pathname === item.path || (item.path !== "/app" && location.pathname.startsWith(item.path));
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive
+                  ? 'bg-agro-primary text-white shadow-lg shadow-agro-primary/20'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                  }`}
+              >
+                <i className={`${item.icon} w-5 text-center`}></i>
+                <span className="font-medium">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </aside>
 
-      <div className="content-wrapper" style={{ minHeight: "100vh" }}>
-        <Routes>
-          <Route
-            index
-            element={
-              perfil?.perfil_acceso === "cliente" ? (
-                <Navigate to="/app/espacio-cliente" replace />
-              ) : (
-                <DashboardPage />
-              )
-            }
-          />
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-100 h-16 flex items-center justify-between px-6 sticky top-0 z-40">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 transition-colors"
+            >
+              <i className="fas fa-bars"></i>
+            </button>
+            <div className="hidden md:flex items-center gap-3">
+              <img
+                src={brandLogo}
+                alt="Soil Care logo"
+                className="h-10 w-10 rounded-lg object-contain"
+              />
+              <div>
+                <h2 className="font-semibold leading-tight text-gray-800">Soil Care</h2>
+                <p className="text-xs text-gray-500">{t("brand.tagline")}</p>
+              </div>
+            </div>
+          </div>
 
-          <Route
-            path="ajustes/*"
-            element={
-              <RoleRoute allowed={["admin"]}>
-                <AjustesPage />
-              </RoleRoute>
-            }
-          />
+          <div className="flex items-center gap-4">
+            <LanguageSwitcher />
+            <div className="flex flex-col items-end mr-2">
+              <span className="text-sm font-bold text-gray-900">
+                {perfil?.nombre ?? t("common.user")}
+              </span>
+              <span className="text-xs text-gray-500 capitalize">
+                {perfil?.perfil_acceso
+                  ? t(`common.role.${perfil.perfil_acceso}`)
+                  : t("common.user")}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleSignOut()}
+              disabled={isSigningOut}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-sm font-bold hover:bg-red-100 transition-colors"
+            >
+              <i className={`fas ${isSigningOut ? "fa-spinner fa-spin" : "fa-sign-out-alt"}`}></i>
+              <span className="hidden sm:inline">
+                {isSigningOut ? t("layout.loggingOut") : t("layout.logout")}
+              </span>
+            </button>
+          </div>
+        </header>
 
-          <Route
-            path="productos/*"
-            element={
-              <RoleRoute allowed={["admin", "rtv"]}>
-                <ProductosPage />
-              </RoleRoute>
-            }
-          />
+        {/* Routes Container */}
+        <main className="flex-1 overflow-auto">
+          <Routes>
+            <Route
+              index
+              element={<DashboardPage />}
+            />
 
-          <Route
-            path="crm/*"
-            element={
-              <RoleRoute allowed={["admin", "rtv"]}>
-                <CRMPage />
-              </RoleRoute>
-            }
-          />
+            <Route
+              path="clientes/*"
+              element={
+                <RoleRoute allowed={["admin", "operador"]}>
+                  <ClientesPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="areas/*"
+              element={
+                <RoleRoute allowed={["admin", "operador"]}>
+                  <AreasPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="analises/*"
+              element={
+                <RoleRoute allowed={["admin", "operador"]}>
+                  <AnalisesPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="parametros/*"
+              element={
+                <RoleRoute allowed={["admin"]}>
+                  <ParametrosPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="usuarios/*"
+              element={
+                <RoleRoute allowed={["admin"]}>
+                  <UsuariosPage />
+                </RoleRoute>
+              }
+            />
 
-          <Route
-            path="parcelas/*"
-            element={
-              <RoleRoute allowed={["admin", "rtv"]}>
-                <ParcelasPage />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="monitoreo/*"
-            element={
-              <RoleRoute allowed={["admin", "rtv"]}>
-                <MonitoreoPage />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="agente-ia/*"
-            element={
-              <RoleRoute allowed={["admin"]}>
-                <AgenteIAPage />
-              </RoleRoute>
-            }
-          />
-
-          <Route
-            path="espacio-cliente/*"
-            element={
-              <RoleRoute allowed={["cliente", "admin", "rtv"]}>
-                <EspacioClientePage />
-              </RoleRoute>
-            }
-          />
-
-          <Route path="*" element={<Navigate to="/404" replace />} />
-        </Routes>
-        <Outlet />
+            <Route path="*" element={<DashboardPage />} />
+          </Routes>
+        </main>
       </div>
     </div>
   );
 }
-
-function PlaceholderPage({ titulo }: { titulo: string }) {
-  return (
-    <section className="content">
-      <div className="container-fluid">
-        <div className="row">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header bg-success text-white">
-                <h3 className="card-title mb-0">{titulo}</h3>
-              </div>
-              <div className="card-body">
-                <p>
-                  Esta sección será implementada conforme al PRD de Primesoft
-                  CBISA.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-

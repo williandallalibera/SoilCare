@@ -9,6 +9,10 @@ interface Empresa {
   logo_url: string | null;
 }
 
+const inputCls = "w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-agro-primary focus:ring-2 focus:ring-agro-primary/20 outline-none transition-all disabled:bg-gray-50";
+const labelCls = "text-sm font-bold text-gray-700 block mb-2";
+const btnPrimary = "px-8 py-3 bg-agro-primary text-white font-bold rounded-xl shadow-lg shadow-agro-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50";
+
 export function EmpresaTab() {
   const [empresa, setEmpresa] = useState<Empresa | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,11 +27,34 @@ export function EmpresaTab() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+
+      if (isReviewMode) {
+        console.log("EmpresaTab: Review Mode - Injecting mock data");
+        const mockData = {
+          id: "mock-empresa-id",
+          ruc: "80012345-6",
+          direccion: "Av. Mariscal López 1234, Asunción",
+          telefono: "+595 21 600 000",
+          logo_url: "https://cbisa.com.py/logo.png"
+        };
+        setEmpresa(mockData);
+        setForm({
+          ruc: mockData.ruc,
+          direccion: mockData.direccion,
+          telefono: mockData.telefono,
+          logo_url: mockData.logo_url
+        });
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("empresa")
         .select("*")
         .limit(1)
         .maybeSingle();
+
       if (!error && data) {
         setEmpresa(data);
         setForm({
@@ -79,55 +106,78 @@ export function EmpresaTab() {
   };
 
   if (loading) {
-    return <span>Cargando datos de la empresa...</span>;
+    return (
+      <div className="p-12 text-center text-gray-400">
+        <i className="fas fa-spinner fa-spin mr-2" />Cargando datos de la empresa...
+      </div>
+    );
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div className="form-row">
-        <div className="form-group col-md-3">
-          <label>RUC</label>
-          <input
-            className="form-control"
-            placeholder="RUC de la empresa"
-            value={form.ruc}
-            onChange={(e) => setForm({ ...form, ruc: e.target.value })}
-          />
+    <div className="p-8">
+      <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+        <i className="fas fa-building text-agro-primary"></i>
+        Datos de la Empresa
+      </h3>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className={labelCls}>RUC</label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="Ej: 80000000-0"
+              value={form.ruc}
+              onChange={(e) => setForm({ ...form, ruc: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Teléfono</label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="Ej: +595 900 000000"
+              value={form.telefono}
+              onChange={(e) => setForm({ ...form, telefono: e.target.value })}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Dirección Fiscal</label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="Calle, Ciudad, Departamento"
+              value={form.direccion}
+              onChange={(e) => setForm({ ...form, direccion: e.target.value })}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className={labelCls}>Logo (URL Storage Supabase)</label>
+            <input
+              type="text"
+              className={inputCls}
+              placeholder="https://..."
+              value={form.logo_url}
+              onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
+            />
+          </div>
         </div>
-        <div className="form-group col-md-5">
-          <label>Dirección</label>
-          <input
-            className="form-control"
-            placeholder="Dirección fiscal"
-            value={form.direccion}
-            onChange={(e) => setForm({ ...form, direccion: e.target.value })}
-          />
+
+        <div className="pt-6 border-t border-gray-100 flex justify-end">
+          <button
+            type="submit"
+            className={btnPrimary}
+            disabled={saving}
+          >
+            {saving ? (
+              <><i className="fas fa-spinner fa-spin mr-2" /> Guardando...</>
+            ) : (
+              <><i className="fas fa-save mr-2" /> Guardar Cambios</>
+            )}
+          </button>
         </div>
-        <div className="form-group col-md-4">
-          <label>Teléfono</label>
-          <input
-            className="form-control"
-            placeholder="Teléfono de contacto"
-            value={form.telefono}
-            onChange={(e) => setForm({ ...form, telefono: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="form-row">
-        <div className="form-group col-md-6">
-          <label>Logo (URL)</label>
-          <input
-            className="form-control"
-            placeholder="URL del logo (Storage Supabase)"
-            value={form.logo_url}
-            onChange={(e) => setForm({ ...form, logo_url: e.target.value })}
-          />
-        </div>
-      </div>
-      <button type="submit" className="btn btn-success" disabled={saving}>
-        {saving ? "Guardando..." : "Guardar"}
-      </button>
-    </form>
+      </form>
+    </div>
   );
 }
-

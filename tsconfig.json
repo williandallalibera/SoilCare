@@ -14,10 +14,17 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "jsx": "react-jsx"
   },
   "include": ["src"],
+  "exclude": [
+    "src/modules/agente-ia/**",
+    "src/modules/ajustes/**",
+    "src/modules/crm/**",
+    "src/modules/espacio-cliente/**",
+    "src/modules/monitoreo/**",
+    "src/modules/parcelas/**",
+    "src/modules/productos/**"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
-

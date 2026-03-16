@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@theme {
+    --color-agro-primary: #4e342e;
+    --color-agro-secondary: #8d6e63;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+}

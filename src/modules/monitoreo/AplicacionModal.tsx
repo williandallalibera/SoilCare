@@ -39,6 +39,11 @@ interface AplicacionModalProps {
   onSaved: () => void;
 }
 
+const inputCls = "w-full px-3 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:border-agro-primary focus:ring-2 focus:ring-agro-primary/20 outline-none transition-all disabled:bg-gray-50 disabled:text-gray-400";
+const labelCls = "block text-xs font-bold text-gray-600 mb-1";
+const btnPrimary = "inline-flex items-center gap-2 px-4 py-2 bg-agro-primary text-white text-sm font-bold rounded-xl shadow shadow-agro-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100";
+const btnSecondary = "inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 text-sm font-bold rounded-xl hover:bg-gray-50 transition-all";
+
 export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa, onClose, onSaved }: AplicacionModalProps) {
   const [monitoreo, setMonitoreo] = useState<MonitoreoForModal | null>(monitoreoProp);
   const [fechaAplicacion, setFechaAplicacion] = useState("");
@@ -54,10 +59,26 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const area = areaHa ?? 0;
-  const areaValid = area > 0;
+  const areaValid = area > 0 || (monitoreo?.hectares && monitoreo.hectares > 0);
+  const currentArea = area > 0 ? area : (monitoreo?.hectares ?? 0);
 
   useEffect(() => {
     const load = async () => {
+      const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+      if (isReviewMode) {
+        setFechaAplicacion(new Date().toISOString().slice(0, 10));
+        setTiposAplicacion([
+          { id: "t-1", descripcion: "Terrestre" },
+          { id: "t-2", descripcion: "Aérea" }
+        ]);
+        setProductos([
+          { id: "mock-a1", nombre: "Glifosato 48%", contenido_empaque: 20, precio_venta: 85, culturas: [] },
+          { id: "mock-a2", nombre: "Insecticida X", contenido_empaque: 5, precio_venta: 150, culturas: [] }
+        ]);
+        setLoading(false);
+        return;
+      }
+
       const { data: apl } = await supabase
         .from("aplicaciones")
         .select("id_monitoreo, fecha_aplicacion, id_tipo_aplicacion, rendimiento_tanque_ha")
@@ -118,10 +139,10 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
 
       if (items?.length && apl) {
         const mId = (apl as any).id_monitoreo;
-        let areaVal = areaHa ?? 0;
+        let areaVal = currentArea;
         if (!areaVal && mId) {
-          const { data: mon } = await supabase.from("monitoreos").select("hectares").eq("id", mId).single();
-          areaVal = (mon as any)?.hectares ?? 0;
+          const { data: monVal } = await supabase.from("monitoreos").select("hectares").eq("id", mId).single();
+          areaVal = (monVal as any)?.hectares ?? 0;
         }
         const areaOk = areaVal > 0;
         setLines(
@@ -146,17 +167,17 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
       setLoading(false);
     };
     load();
-  }, [aplicacionId, areaHa, monitoreoProp?.id]);
+  }, [aplicacionId, areaHa, monitoreoProp?.id, currentArea]);
 
   const addLine = () => {
     const prod = productos.find((p) => p.id === productoAdd);
     if (!prod || !dosisAdd.trim() || !areaValid) return;
     const dosis = Number(dosisAdd.replace(",", ".")) || 0;
-    const contenido = Number(prod.contenido_empaque) || 1;
-    const cantidad = (area * dosis) / contenido;
+    const conteúdo = Number(prod.contenido_empaque) || 1;
+    const quantidade = (currentArea * dosis) / conteúdo;
     const precio = Number(prod.precio_venta) || 0;
-    const importe_total = cantidad * precio;
-    const costo_ha = area > 0 ? importe_total / area : 0;
+    const importe_total = quantidade * precio;
+    const costo_ha = currentArea > 0 ? importe_total / currentArea : 0;
     if (lines.some((l) => l.id_producto === prod.id)) return;
     setLines((prev) => [
       ...prev,
@@ -164,7 +185,7 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
         id_producto: prod.id,
         nombre: prod.nombre,
         dosis_ha: dosisAdd,
-        cantidad,
+        cantidad: quantidade,
         importe_total,
         costo_ha,
         contenido_empaque: prod.contenido_empaque,
@@ -184,20 +205,20 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
     setLines((prev) =>
       prev.map((l) => {
         if (l.id_producto !== idProducto) return l;
-        const contenido = l.contenido_empaque ?? 1;
-        const cantidad = (area * dosis) / contenido;
-        const importe_total = cantidad * (l.precio_venta ?? 0);
-        const costo_ha = areaValid ? importe_total / area : 0;
-        return { ...l, dosis_ha: dosisHa, cantidad, importe_total, costo_ha };
+        const conteúdo = l.contenido_empaque ?? 1;
+        const quantidade = (currentArea * dosis) / conteúdo;
+        const importe_total = quantidade * (l.precio_venta ?? 0);
+        const costo_ha = currentArea > 0 ? importe_total / currentArea : 0;
+        return { ...l, dosis_ha: dosisHa, quantidade, importe_total, costo_ha };
       })
     );
   };
 
   const totals = useMemo(() => {
     const total = lines.reduce((s, l) => s + l.importe_total, 0);
-    const costoHa = areaValid && total > 0 ? total / area : 0;
+    const costoHa = currentArea > 0 && total > 0 ? total / currentArea : 0;
     return { total, costoHa };
-  }, [lines, area, areaValid]);
+  }, [lines, currentArea]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -238,180 +259,211 @@ export function AplicacionModal({ aplicacionId, monitoreo: monitoreoProp, areaHa
     setGenerandoPdf(false);
   };
 
-  if (loading || !monitoreo) {
-    return (
-      <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-        <div className="modal-dialog modal-lg">
-          <div className="modal-content">
-            <div className="modal-body text-center py-5">Cargando...</div>
-          </div>
-        </div>
+  if (loading || !monitoreo) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl p-8 flex flex-col items-center">
+        <i className="fas fa-spinner fa-spin text-agro-primary text-2xl mb-4" />
+        <span className="text-gray-500 font-bold uppercase text-xs tracking-widest">Cargando...</span>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-      <div className="modal-dialog modal-xl">
-        <div className="modal-content">
-          <div className="modal-header bg-success text-white">
-            <h5 className="modal-title">
-              Aplicación – {monitoreo.cliente_nombre} / {monitoreo.parcela_nombre} / {monitoreo.zafra_nombre}
-            </h5>
-            <button type="button" className="close text-white" onClick={onClose}>
-              <span>&times;</span>
-            </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+              <i className="fas fa-spray-can text-sm" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 leading-tight text-base">Registro de Aplicación</h3>
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                {monitoreo.cliente_nombre} / {monitoreo.parcela_nombre} / {monitoreo.zafra_nombre}
+              </p>
+            </div>
           </div>
-          <form onSubmit={handleSubmit}>
-            <div className="modal-body">
-              {!areaValid && (
-                <div className="alert alert-warning">Configure el área (ha) para calcular cantidades.</div>
-              )}
-              <div className="row mb-3">
-                <div className="col-md-3">
-                  <label className="form-label">Fecha aplicación</label>
-                  <input
-                    type="date"
-                    className="form-control form-control-sm"
-                    value={fechaAplicacion}
-                    onChange={(e) => setFechaAplicacion(e.target.value)}
-                  />
-                </div>
-                <div className="col-md-3">
-                  <label className="form-label">Tipo aplicación</label>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <i className="fas fa-times" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 overflow-y-auto space-y-6">
+            {!areaValid && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-xs flex items-center gap-3">
+                <i className="fas fa-exclamation-triangle text-amber-500" />
+                Configure el área (ha) para calcular cantidades.
+              </div>
+            )}
+
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className={labelCls}>Fecha aplicación</label>
+                <input
+                  type="date"
+                  className={inputCls}
+                  value={fechaAplicacion}
+                  onChange={(e) => setFechaAplicacion(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Tipo aplicación</label>
+                <select
+                  className={inputCls}
+                  value={idTipoAplicacion}
+                  onChange={(e) => setIdTipoAplicacion(e.target.value)}
+                >
+                  <option value="">Seleccione</option>
+                  {tiposAplicacion.map((t) => (
+                    <option key={t.id} value={t.id}>{t.descripcion}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Rend. tanque/ha</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  placeholder="0.00"
+                  value={rendimientoTanqueHa}
+                  onChange={(e) => setRendimientoTanqueHa(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Área (ha)</label>
+                <input
+                  type="text"
+                  className={`${inputCls} bg-gray-50 font-mono`}
+                  value={formatDecimal(currentArea) || "-"}
+                  readOnly
+                />
+              </div>
+            </div>
+
+            {/* Insumos Section */}
+            <div className="p-5 border border-gray-100 rounded-2xl bg-gray-50/50 space-y-4">
+              <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                <i className="fas fa-flask text-[10px]" /> Productos Aplicados
+              </h4>
+              <div className="grid grid-cols-12 gap-3 items-end">
+                <div className="col-span-12 md:col-span-7">
+                  <label className={labelCls}>Producto (Filtrado por Cultura)</label>
                   <select
-                    className="form-control form-control-sm"
-                    value={idTipoAplicacion}
-                    onChange={(e) => setIdTipoAplicacion(e.target.value)}
+                    className={inputCls}
+                    value={productoAdd}
+                    onChange={(e) => setProductoAdd(e.target.value)}
                   >
-                    <option value="">Seleccione</option>
-                    {tiposAplicacion.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.descripcion}
-                      </option>
-                    ))}
+                    <option value="">Seleccione un producto</option>
+                    {productos
+                      .filter((p) => !lines.some((l) => l.id_producto === p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.nombre}</option>
+                      ))}
                   </select>
                 </div>
-                <div className="col-md-2">
-                  <label className="form-label">Rend. tanque/ha</label>
+                <div className="col-span-6 md:col-span-3">
+                  <label className={labelCls}>Dosis/ha</label>
                   <input
                     type="text"
-                    className="form-control form-control-sm"
-                    placeholder="0"
-                    value={rendimientoTanqueHa}
-                    onChange={(e) => setRendimientoTanqueHa(e.target.value)}
+                    className={inputCls}
+                    placeholder="0.00"
+                    value={dosisAdd}
+                    onChange={(e) => setDosisAdd(e.target.value)}
                   />
                 </div>
-                <div className="col-md-2">
-                  <label className="form-label">Área (ha)</label>
-                  <input type="text" className="form-control form-control-sm" value={formatDecimal(area) || "-"} readOnly />
+                <div className="col-span-6 md:col-span-2">
+                  <button
+                    type="button"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-agro-primary text-white text-sm font-bold rounded-xl shadow shadow-agro-primary/20 hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
+                    onClick={addLine}
+                    disabled={!productoAdd || !dosisAdd.trim() || !areaValid}
+                  >
+                    <i className="fas fa-plus text-xs" /> Agregar
+                  </button>
                 </div>
               </div>
 
-              <div className="card mb-3">
-                <div className="card-header py-2">Productos</div>
-                <div className="card-body py-2">
-                  <div className="row align-items-end">
-                    <div className="col-md-5">
-                      <label className="form-label small">Producto</label>
-                      <select
-                        className="form-control form-control-sm"
-                        value={productoAdd}
-                        onChange={(e) => setProductoAdd(e.target.value)}
-                      >
-                        <option value="">Seleccione</option>
-                        {productos.filter((p) => !lines.some((l) => l.id_producto === p.id)).map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-md-2">
-                      <label className="form-label small">Dosis/ha</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="0"
-                        value={dosisAdd}
-                        onChange={(e) => setDosisAdd(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-md-2">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-success"
-                        onClick={addLine}
-                        disabled={!productoAdd || !dosisAdd.trim() || !areaValid}
-                      >
-                        Agregar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="table-responsive">
-                <table className="table table-sm table-bordered">
-                  <thead className="thead-light">
-                    <tr>
-                      <th>Producto</th>
-                      <th>Dosis/ha</th>
-                      <th>Cantidad</th>
-                      <th>Costo/ha (USD)</th>
-                      <th>Importe total (USD)</th>
-                      <th style={{ width: 40 }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l) => (
-                      <tr key={l.id_producto}>
-                        <td>{l.nombre}</td>
-                        <td>
-                          <input
-                            type="text"
-                            className="form-control form-control-sm"
-                            value={l.dosis_ha}
-                            onChange={(e) => updateDosis(l.id_producto, e.target.value)}
-                          />
-                        </td>
-                        <td>{formatDecimal(l.cantidad)}</td>
-                        <td>{formatDecimal(l.costo_ha)}</td>
-                        <td>{formatDecimal(l.importe_total)}</td>
-                        <td>
-                          <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeLine(l.id_producto)}>
-                            &times;
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* Tabela de Linhas */}
               {lines.length > 0 && (
-                <div className="row mt-2">
-                  <div className="col-md-6">
-                    <strong>Costo total (USD):</strong> {formatDecimal(totals.total)}
-                  </div>
-                  <div className="col-md-6">
-                    <strong>Costo/ha (USD):</strong> {formatDecimal(totals.costoHa)}
-                  </div>
+                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm mt-4">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-3 py-2.5 font-bold text-gray-500">Producto</th>
+                        <th className="text-left px-3 py-2.5 font-bold text-gray-500 w-24">Dosis/ha</th>
+                        <th className="text-right px-3 py-2.5 font-bold text-gray-500">Quantidade</th>
+                        <th className="text-right px-3 py-2.5 font-bold text-gray-500">Costo/ha</th>
+                        <th className="text-right px-3 py-2.5 font-bold text-gray-500">Total USD</th>
+                        <th className="w-10 px-3 py-2.5" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {lines.map((l) => (
+                        <tr key={l.id_producto} className="group hover:bg-gray-50/50 transition-colors">
+                          <td className="px-3 py-2 font-bold text-gray-800">{l.nombre}</td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1 text-xs rounded-lg border border-gray-200 bg-white focus:border-agro-primary outline-none transition-all"
+                              value={l.dosis_ha}
+                              onChange={(e) => updateDosis(l.id_producto, e.target.value)}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-gray-600">{formatDecimal(l.cantidad)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-gray-600">${formatDecimal(l.costo_ha)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-agro-primary">${formatDecimal(l.importe_total)}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button
+                              type="button"
+                              className="w-6 h-6 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                              onClick={() => removeLine(l.id_producto)}
+                            >
+                              <i className="fas fa-trash-alt text-[10px]" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50/80 font-black border-t-2 border-gray-200">
+                        <td colSpan={3} className="px-3 py-3 text-right uppercase tracking-wider text-[10px] text-gray-400">Totales Aplicación:</td>
+                        <td className="px-3 py-3 text-right font-mono text-agro-primary underline decoration-2 underline-offset-4">${formatDecimal(totals.costoHa)}/ha</td>
+                        <td className="px-3 py-3 text-right font-mono text-lg text-agro-primary">${formatDecimal(totals.total)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
-                Cerrar
-              </button>
-              <button type="button" className="btn btn-info" onClick={handlePdf} disabled={generandoPdf}>
-                {generandoPdf ? "Generando..." : "Generar PDF"}
-              </button>
-              <button type="submit" className="btn btn-success" disabled={saving}>
-                {saving ? "Guardando..." : "Guardar"}
+          </div>
+
+          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-shrink-0 bg-gray-50">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-blue-600 text-sm font-bold transition-all"
+              onClick={handlePdf}
+              disabled={generandoPdf}
+            >
+              {generandoPdf ? (
+                <><i className="fas fa-spinner fa-spin" /> Generando PDF...</>
+              ) : (
+                <><i className="fas fa-file-pdf" /> Exportar Aplicación PDF</>
+              )}
+            </button>
+            <div className="flex gap-3">
+              <button type="button" className={btnSecondary} onClick={onClose}>Cancelar</button>
+              <button type="submit" className={btnPrimary} disabled={saving}>
+                {saving ? (
+                  <><i className="fas fa-spinner fa-spin text-xs" /> Guardando...</>
+                ) : (
+                  <><i className="fas fa-save text-xs" /> Guardar Aplicación</>
+                )}
               </button>
             </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

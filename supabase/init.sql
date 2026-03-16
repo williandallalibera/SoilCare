@@ -1,0 +1,7 @@
+-- Arquivo legado de conveniência.
+-- A base oficial do schema está em:
+-- supabase/migrations/20260316183000_solo_saas_multi_scope.sql
+--
+-- Para projeto novo ou existente, prefira:
+-- 1. `supabase db push`
+-- 2. ou executar o conteúdo da migration no SQL Editor do Supabase

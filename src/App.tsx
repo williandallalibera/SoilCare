@@ -3,7 +3,6 @@ import { LoginPage } from "./modules/auth/LoginPage";
 import { NotFoundPage } from "./modules/common/NotFoundPage";
 import { AdminLayout } from "./modules/layout/AdminLayout";
 import { PrivateRoute } from "./modules/auth/PrivateRoute";
-import { RoleRoute } from "./modules/auth/RoleRoute";
 
 export function App() {
   return (
@@ -11,6 +10,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/404" element={<NotFoundPage />} />
 
+      {/* Admin Routes handled by AdminLayout */}
       <Route
         path="/app/*"
         element={
@@ -27,4 +27,3 @@ export function App() {
 }
 
 export default App;
-

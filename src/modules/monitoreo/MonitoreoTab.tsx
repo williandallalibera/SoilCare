@@ -28,6 +28,11 @@ interface MonitoreoRow {
   created_at: string;
 }
 
+const inputCls = "w-full px-3 py-2 text-sm rounded-xl border border-gray-200 bg-white focus:border-agro-primary focus:ring-2 focus:ring-agro-primary/20 outline-none transition-all";
+const labelCls = "block text-xs font-bold text-gray-600 mb-1";
+const btnPrimary = "inline-flex items-center gap-2 px-4 py-2 bg-agro-primary text-white text-sm font-bold rounded-xl shadow shadow-agro-primary/20 hover:opacity-90 transition-all active:scale-95";
+const btnSecondary = "inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 text-sm font-bold rounded-xl hover:bg-gray-50 transition-all";
+
 export function MonitoreoTab() {
   const { perfil } = useAuth();
   const [rows, setRows] = useState<MonitoreoRow[]>([]);
@@ -54,12 +59,56 @@ export function MonitoreoTab() {
   const [rteModal, setRteModal] = useState<{ rteId: string; monitoreo: MonitoreoRow } | null>(null);
   const [evaluacionModal, setEvaluacionModal] = useState<{ evaluacionId: string; monitoreo: MonitoreoRow } | null>(null);
   const [evaluacionesList, setEvaluacionesList] = useState<{ id: string; fecha_evaluacion: string }[]>([]);
+  const [siembraData, setSiembraData] = useState<{ id: string; fecha_inicio: string | null; fecha_termino: string | null; costo_total: number | null } | null>(null);
+  const [cosechaData, setCosechaData] = useState<{ id: string; fecha_inicio: string | null; fecha_termino: string | null; costo_total: number | null } | null>(null);
+  const [rteDataRow, setRteDataRow] = useState<{ id: string; costo_total: number | null; ingreso_total: number | null; resultado_tecnico: number | null } | null>(null);
+  const [filterEtapa, setFilterEtapa] = useState("");
+  const [editPlanificacion, setEditPlanificacion] = useState(false);
+
+  
+  useEffect(() => {
+    if (!showDetail?.id) {
+      setSiembraData(null);
+      setCosechaData(null);
+      setRteDataRow(null);
+      return;
+    }
+    const loadExtra = async () => {
+      if (showDetail.tiene_siembra) {
+        const { data } = await supabase.from("siembra").select("id, fecha_inicio, fecha_termino, costo_total").eq("id_monitoreo", showDetail.id).single();
+        setSiembraData((data as any) || null);
+      }
+      if (showDetail.tiene_cosecha) {
+        const { data } = await supabase.from("cosechas").select("id, fecha_inicio, fecha_termino, costo_total").eq("id_monitoreo", showDetail.id).single();
+        setCosechaData((data as any) || null);
+      }
+      if (showDetail.tiene_rte) {
+        const { data } = await supabase.from("rte").select("id, costo_total, ingreso_total, resultado_tecnico").eq("id_monitoreo", showDetail.id).single();
+        setRteDataRow((data as any) || null);
+      }
+    };
+    loadExtra();
+  }, [showDetail?.id, showDetail?.tiene_siembra, showDetail?.tiene_cosecha, showDetail?.tiene_rte]);
+
+  // Accordion state
+  const [expandedAplicaciones, setExpandedAplicaciones] = useState(false);
+  const [expandedEvaluaciones, setExpandedEvaluaciones] = useState(false);
 
   const loadMonitoreos = async () => {
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      console.log("MonitoreoTab: Review Mode - Injecting mock monitoreos");
+      setRows([{
+        id: "m-1", id_cliente: "cl-1", id_parcela: "pa-1", id_zafra: "z-1", hectares: 100, costo_estimado: 5000, productividad_estimada: 3500, tiene_siembra: true, tiene_aplicaciones: true, tiene_evaluaciones: true, tiene_cosecha: false, tiene_rte: false, concluido: false, cliente_nombre: "Fazenda Santa Maria", parcela_nombre: "Lote 1", zafra_nombre: "2023/2024", created_at: new Date().toISOString()
+      }]);
+      return;
+    }
+
     let q = supabase
       .from("monitoreos")
       .select("id, id_cliente, id_parcela, id_zafra, hectares, costo_estimado, productividad_estimada, tiene_siembra, tiene_aplicaciones, tiene_evaluaciones, tiene_cosecha, tiene_rte, concluido, created_at")
       .order("created_at", { ascending: false });
+
     if (perfil?.perfil_acceso === "rtv") {
       const { data: clientesRtv } = await supabase.from("clientes").select("id").eq("id_vendedor", perfil.id);
       const ids = (clientesRtv ?? []).map((c: { id: string }) => c.id);
@@ -71,12 +120,15 @@ export function MonitoreoTab() {
     }
     const { data, error } = await q;
     if (error || !data) return;
+
     const cIds = [...new Set((data as any[]).map((d) => d.id_cliente))];
     const pIds = [...new Set((data as any[]).map((d) => d.id_parcela))];
     const zIds = [...new Set((data as any[]).map((d) => d.id_zafra))];
+
     let cMap: Record<string, string> = {};
     let pMap: Record<string, string> = {};
     let zMap: Record<string, string> = {};
+
     if (cIds.length) {
       const { data: c } = await supabase.from("clientes").select("id, nombre").in("id", cIds);
       if (c) cMap = Object.fromEntries((c as any[]).map((x) => [x.id, x.nombre]));
@@ -102,7 +154,17 @@ export function MonitoreoTab() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
       await loadMonitoreos();
+
+      if (isReviewMode) {
+        setClientes([{ id: "cl-1", nombre: "Fazenda Santa Maria" }]);
+        setParcelas([{ id: "pa-1", nombre_parcela: "Lote 1", id_cliente: "cl-1", area_real_ha: 100 }]);
+        setZafras([{ id: "z-1", nombre_zafra: "2023/2024" }]);
+        setLoading(false);
+        return;
+      }
+
       let clientesQ = supabase.from("clientes").select("id, nombre").eq("estado", "activo");
       if (perfil?.perfil_acceso === "rtv") {
         clientesQ = clientesQ.eq("id_vendedor", perfil.id);
@@ -128,6 +190,15 @@ export function MonitoreoTab() {
   useEffect(() => {
     if (!showDetail?.id || !showDetail.tiene_aplicaciones) {
       setAplicacionesList([]);
+      setExpandedAplicaciones(false);
+      return;
+    }
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setAplicacionesList([
+        { id: "app-1", fecha_aplicacion: "2024-01-15T10:00:00.000Z" },
+        { id: "app-2", fecha_aplicacion: "2024-02-20T14:30:00.000Z" }
+      ]);
       return;
     }
     const load = async () => {
@@ -144,6 +215,15 @@ export function MonitoreoTab() {
   useEffect(() => {
     if (!showDetail?.id || !showDetail.tiene_evaluaciones) {
       setEvaluacionesList([]);
+      setExpandedEvaluaciones(false);
+      return;
+    }
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setEvaluacionesList([
+        { id: "ev-1", fecha_evaluacion: "2024-01-20T09:00:00.000Z" },
+        { id: "ev-2", fecha_evaluacion: "2024-03-05T11:15:00.000Z" }
+      ]);
       return;
     }
     const load = async () => {
@@ -161,8 +241,36 @@ export function MonitoreoTab() {
     let list = rows;
     if (filterCliente) list = list.filter((r) => r.id_cliente === filterCliente);
     if (filterParcela) list = list.filter((r) => r.id_parcela === filterParcela);
+    if (filterEtapa) {
+      list = list.filter((r) => {
+        if (filterEtapa === "concluido") return r.concluido;
+        if (filterEtapa === "rte") return r.tiene_rte;
+        if (filterEtapa === "cosecha") return r.tiene_cosecha;
+        if (filterEtapa === "evaluacion") return r.tiene_evaluaciones;
+        if (filterEtapa === "aplicacion") return r.tiene_aplicaciones;
+        if (filterEtapa === "siembra") return r.tiene_siembra;
+        if (filterEtapa === "planificacion") return !r.tiene_siembra && !r.tiene_aplicaciones && !r.tiene_evaluaciones && !r.tiene_cosecha && !r.concluido;
+        return true;
+      });
+    }
+    // Busqueda por cliente o parcela se puede hacer combinando o en sus dropdowns
     return list;
-  }, [rows, filterCliente, filterParcela]);
+  }, [rows, filterCliente, filterParcela, filterEtapa]);
+
+  const exportCSV = () => {
+    const headers = ["Cliente", "Parcela", "Zafra", "Hectareas", "Costo Est.", "Status", "Fecha Creacion"];
+    const csvRows = [headers.join(",")];
+    for (const r of filteredRows) {
+      const status = r.concluido ? "Concluido" : "Em Pista";
+      csvRows.push([r.cliente_nombre, r.parcela_nombre, r.zafra_nombre, r.hectares, r.costo_estimado, status, r.created_at].join(","));
+    }
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "monitoreos.csv";
+    a.click();
+  };
 
   const resetForm = () => {
     setForm({
@@ -185,20 +293,43 @@ export function MonitoreoTab() {
     const parcela = parcelas.find((p) => p.id === form.id_parcela);
     const hectares = parcela?.area_real_ha ?? null;
     setSaving(true);
-    await supabase.from("monitoreos").insert({
-      id_cliente: form.id_cliente,
-      id_parcela: form.id_parcela,
-      id_zafra: form.id_zafra,
-      hectares,
-      costo_estimado: form.costo_estimado !== "" ? Number(form.costo_estimado) : null,
-      productividad_estimada: form.productividad_estimada !== "" ? Number(form.productividad_estimada) : null,
-    });
-    await loadMonitoreos();
+    
+    if (editPlanificacion && showDetail) {
+      await supabase.from("monitoreos").update({
+        id_cliente: form.id_cliente,
+        id_parcela: form.id_parcela,
+        id_zafra: form.id_zafra,
+        hectares,
+        costo_estimado: form.costo_estimado !== "" ? Number(form.costo_estimado) : null,
+        productividad_estimada: form.productividad_estimada !== "" ? Number(form.productividad_estimada) : null,
+      }).eq("id", showDetail.id);
+      await loadMonitoreos();
+      setShowDetail(null);
+      setEditPlanificacion(false);
+    } else {
+      await supabase.from("monitoreos").insert({
+        id_cliente: form.id_cliente,
+        id_parcela: form.id_parcela,
+        id_zafra: form.id_zafra,
+        hectares,
+        costo_estimado: form.costo_estimado !== "" ? Number(form.costo_estimado) : null,
+        productividad_estimada: form.productividad_estimada !== "" ? Number(form.productividad_estimada) : null,
+      });
+      await loadMonitoreos();
+    }
     resetForm();
     setSaving(false);
   };
 
   const handleIniciarSiembra = async (m: MonitoreoRow) => {
+    if (m.tiene_siembra) return;
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setSiembraModal({ monitoreo: m, siembraId: "mock-siembra-id" });
+      setShowDetail((prev) => (prev?.id === m.id ? { ...prev, tiene_siembra: true } : prev));
+      return;
+    }
+
     const { data } = await supabase.from("siembra").insert({ id_monitoreo: m.id }).select("id").single();
     if (data) {
       await supabase.from("monitoreos").update({ tiene_siembra: true }).eq("id", m.id);
@@ -214,6 +345,17 @@ export function MonitoreoTab() {
   };
 
   const handleIniciarAplicacion = async (m: MonitoreoRow) => {
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setAplicacionModal({
+        aplicacionId: "mock-app-" + Date.now(),
+        monitoreo: m,
+        areaHa: m.hectares ?? 100,
+      });
+      setShowDetail((prev) => (prev?.id === m.id ? { ...prev, tiene_aplicaciones: true } : prev));
+      return;
+    }
+
     const { data } = await supabase.from("aplicaciones").insert({ id_monitoreo: m.id }).select("id").single();
     if (data) {
       await supabase.from("monitoreos").update({ tiene_aplicaciones: true }).eq("id", m.id);
@@ -236,6 +378,13 @@ export function MonitoreoTab() {
   };
 
   const handleIniciarEvaluacion = async (m: MonitoreoRow) => {
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setEvaluacionModal({ evaluacionId: "mock-ev-" + Date.now(), monitoreo: m });
+      setShowDetail((prev) => (prev?.id === m.id ? { ...prev, tiene_evaluaciones: true } : prev));
+      return;
+    }
+
     const { data } = await supabase.from("evaluaciones").insert({ id_monitoreo: m.id, fecha_evaluacion: new Date().toISOString().slice(0, 10) }).select("id").single();
     if (data) {
       await supabase.from("monitoreos").update({ tiene_evaluaciones: true }).eq("id", m.id);
@@ -250,6 +399,14 @@ export function MonitoreoTab() {
   };
 
   const handleIniciarCosecha = async (m: MonitoreoRow) => {
+    if (m.tiene_cosecha) return;
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setCosechaModal({ cosechaId: "mock-cosecha-id", monitoreo: m });
+      setShowDetail((prev) => (prev?.id === m.id ? { ...prev, tiene_cosecha: true } : prev));
+      return;
+    }
+
     const { data } = await supabase.from("cosechas").insert({ id_monitoreo: m.id }).select("id").single();
     if (data) {
       await supabase.from("monitoreos").update({ tiene_cosecha: true }).eq("id", m.id);
@@ -265,6 +422,13 @@ export function MonitoreoTab() {
   };
 
   const handleIniciarRte = async (m: MonitoreoRow) => {
+    const isReviewMode = localStorage.getItem("forceAuthReview") === "true";
+    if (isReviewMode) {
+      setRteModal({ rteId: "mock-rte-" + Date.now(), monitoreo: m });
+      setShowDetail((prev) => (prev?.id === m.id ? { ...prev, tiene_rte: true } : prev));
+      return;
+    }
+
     const { data } = await supabase.from("rte").insert({ id_monitoreo: m.id, costo_total: 0, ingreso_total: 0, resultado_tecnico: 0 }).select("id").single();
     if (data) {
       await supabase.from("monitoreos").update({ tiene_rte: true }).eq("id", m.id);
@@ -285,350 +449,300 @@ export function MonitoreoTab() {
     setShowDetail((prev) => (prev?.id === m.id ? { ...prev, concluido: true } : null));
   };
 
-  if (loading) return <span>Cargando monitoreos...</span>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400">
+      <i className="fas fa-spinner fa-spin mr-2" />Cargando monitoreos...
+    </div>
+  );
 
   return (
     <div>
-      <h5 className="mb-3">Monitoreo</h5>
-      <div className="row mb-3">
-        <div className="col-md-4">
-          <label className="form-label">Cliente</label>
+      {/* ── Filtros ── */}
+      <div className="flex flex-wrap gap-3 mb-5 items-end">
+        <div className="min-w-[180px]">
+          <label className={labelCls}>Cliente</label>
           <select
-            className="form-control form-control-sm"
+            className={inputCls}
             value={filterCliente}
             onChange={(e) => setFilterCliente(e.target.value)}
           >
             <option value="">Todos</option>
             {clientes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre}
-              </option>
+              <option key={c.id} value={c.id}>{c.nombre}</option>
             ))}
           </select>
         </div>
-        <div className="col-md-4">
-          <label className="form-label">Parcela</label>
+        <div className="min-w-[180px]">
+          <label className={labelCls}>Parcela</label>
           <select
-            className="form-control form-control-sm"
+            className={inputCls}
             value={filterParcela}
             onChange={(e) => setFilterParcela(e.target.value)}
           >
             <option value="">Todas</option>
             {parcelas.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nombre_parcela}
-              </option>
+              <option key={p.id} value={p.id}>{p.nombre_parcela}</option>
             ))}
           </select>
         </div>
-        <div className="col-md-4 d-flex align-items-end">
-          <button type="button" className="btn btn-success btn-sm" onClick={handleNuevo}>
-            <i className="fas fa-plus mr-1" />
-            Nuevo monitoreo
+        <div className="min-w-[180px]">
+          <label className={labelCls}>Etapa</label>
+          <select
+            className={inputCls}
+            value={filterEtapa}
+            onChange={(e) => setFilterEtapa(e.target.value)}
+          >
+            <option value="">Todas</option>
+            <option value="planificacion">Planificación</option>
+            <option value="siembra">Siembra</option>
+            <option value="aplicacion">Aplicaciones</option>
+            <option value="evaluacion">Evaluaciones</option>
+            <option value="cosecha">Cosecha</option>
+            <option value="rte">RTE</option>
+            <option value="concluido">Concluido</option>
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className={btnSecondary} onClick={exportCSV}>
+            <i className="fas fa-file-csv text-xs" /> Exportar CSV
+          </button>
+          <button type="button" className={btnPrimary} onClick={handleNuevo}>
+            <i className="fas fa-plus text-xs" /> Nuevo monitoreo
           </button>
         </div>
       </div>
-      <div className="table-responsive">
-        <table className="table table-sm table-striped table-hover">
-          <thead className="thead-dark">
-            <tr>
-              <th>Cliente</th>
-              <th>Parcela</th>
-              <th>Zafra</th>
-              <th>Ha</th>
-              <th>Costo est.</th>
-              <th>Concluido</th>
-              <th />
+
+      {/* ── Tabela ── */}
+      <div className="overflow-x-auto rounded-xl border border-gray-100">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Cliente</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Parcela</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Zafra</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide text-right">Ha</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide text-right">Costo Est.</th>
+              <th className="text-left px-4 py-3 font-bold text-gray-600 text-xs uppercase tracking-wide">Status</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-gray-50">
             {filteredRows.map((r) => (
-              <tr key={r.id}>
-                <td>{r.cliente_nombre}</td>
-                <td>{r.parcela_nombre}</td>
-                <td>{r.zafra_nombre}</td>
-                <td>{formatDecimal(r.hectares)}</td>
-                <td>{formatDecimal(r.costo_estimado)}</td>
-                <td>{r.concluido ? "Sí" : "No"}</td>
-                <td>
+              <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-gray-900">{r.cliente_nombre}</td>
+                <td className="px-4 py-3 text-gray-600">{r.parcela_nombre}</td>
+                <td className="px-4 py-3 text-gray-600">{r.zafra_nombre}</td>
+                <td className="px-4 py-3 text-right font-mono">{formatDecimal(r.hectares)}</td>
+                <td className="px-4 py-3 text-right font-mono font-bold text-agro-primary">${formatDecimal(r.costo_estimado)}</td>
+                <td className="px-4 py-3">
+                  {r.concluido ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">Concluido</span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-agro-primary/10 text-agro-primary uppercase">Em Pista</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
                   <button
                     type="button"
-                    className="btn btn-xs btn-outline-success"
+                    className="text-xs font-bold text-agro-primary hover:underline"
                     onClick={() => setShowDetail(r)}
                   >
-                    Ver
+                    Ver detalles
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {filteredRows.length === 0 && (
+          <div className="py-12 text-center text-gray-400">
+            <i className="fas fa-microscope mb-2 text-2xl block" />
+            No hay monitoreos registrados.
+          </div>
+        )}
       </div>
 
+      {/* ── Modal Novo Monitoreo ── */}
       {showModal && (
-        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="modal-dialog">
-            <div className="modal-content">
-              <div className="modal-header bg-success text-white">
-                <h5 className="modal-title">Nuevo monitoreo – Planificación</h5>
-                <button type="button" className="close text-white" onClick={resetForm}>
-                  <span>&times;</span>
-                </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-agro-primary/10 text-agro-primary rounded-lg flex items-center justify-center">
+                  <i className="fas fa-plus text-sm" />
+                </div>
+                <h3 className="font-bold text-gray-900 text-base">{editPlanificacion ? 'Alterar Planificación' : 'Novo monitoreo – Planificação'}</h3>
               </div>
-              <form onSubmit={handleSubmit}>
-                <div className="modal-body">
-                  <div className="form-group">
-                    <label>Cliente</label>
-                    <select
-                      className="form-control"
-                      value={form.id_cliente}
-                      onChange={(e) => setForm({ ...form, id_cliente: e.target.value, id_parcela: "" })}
-                      required
-                    >
-                      <option value="">Seleccione</option>
-                      {clientes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Parcela</label>
-                    <select
-                      className="form-control"
-                      value={form.id_parcela}
-                      onChange={(e) => setForm({ ...form, id_parcela: e.target.value })}
-                      required
-                    >
-                      <option value="">Seleccione</option>
-                      {parcelasByCliente.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.nombre_parcela}
-                          {p.area_real_ha != null ? ` (${formatDecimal(p.area_real_ha)} ha)` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Zafra</label>
-                    <select
-                      className="form-control"
-                      value={form.id_zafra}
-                      onChange={(e) => setForm({ ...form, id_zafra: e.target.value })}
-                      required
-                    >
-                      <option value="">Seleccione</option>
-                      {zafras.map((z) => (
-                        <option key={z.id} value={z.id}>
-                          {z.nombre_zafra}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Costo estimado (USD)</label>
+              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <i className="fas fa-times" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit}>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className={labelCls}>Cliente *</label>
+                  <select
+                    className={inputCls}
+                    value={form.id_cliente}
+                    onChange={(e) => setForm({ ...form, id_cliente: e.target.value, id_parcela: "" })}
+                    required
+                  >
+                    <option value="">Seleccione</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Parcela *</label>
+                  <select
+                    className={inputCls}
+                    value={form.id_parcela}
+                    onChange={(e) => setForm({ ...form, id_parcela: e.target.value })}
+                    required
+                    disabled={!form.id_cliente}
+                  >
+                    <option value="">Seleccione</option>
+                    {parcelasByCliente.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre_parcela}
+                        {p.area_real_ha != null ? ` (${formatDecimal(p.area_real_ha)} ha)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Zafra *</label>
+                  <select
+                    className={inputCls}
+                    value={form.id_zafra}
+                    onChange={(e) => setForm({ ...form, id_zafra: e.target.value })}
+                    required
+                  >
+                    <option value="">Seleccione</option>
+                    {zafras.map((z) => (
+                      <option key={z.id} value={z.id}>{z.nombre_zafra}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Costo est. (USD)</label>
                     <input
                       type="number"
                       step="0.001"
-                      className="form-control"
-                      placeholder="0"
+                      className={inputCls}
+                      placeholder="0.00"
                       value={form.costo_estimado}
                       onChange={(e) => setForm({ ...form, costo_estimado: e.target.value })}
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Productividad estimada (kg/ha)</label>
+                  <div>
+                    <label className={labelCls}>Prod. est. (kg/ha)</label>
                     <input
                       type="number"
                       step="0.001"
-                      className="form-control"
-                      placeholder="0"
+                      className={inputCls}
+                      placeholder="0.00"
                       value={form.productividad_estimada}
                       onChange={(e) => setForm({ ...form, productividad_estimada: e.target.value })}
                     />
                   </div>
                 </div>
-                <div className="modal-footer">
-                  <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                    Cancelar
-                  </button>
-                  <button type="submit" className="btn btn-success" disabled={saving}>
-                    {saving ? "Guardando..." : "Crear"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
+              </div>
 
-      {showDetail && (
-        <div className="modal d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <div className="modal-dialog modal-lg">
-            <div className="modal-content">
-              <div className="modal-header bg-success text-white">
-                <h5 className="modal-title">
-                  Monitoreo – {showDetail.cliente_nombre} / {showDetail.parcela_nombre} / {showDetail.zafra_nombre}
-                </h5>
-                <button type="button" className="close text-white" onClick={() => setShowDetail(null)}>
-                  <span>&times;</span>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+                <button type="button" className={btnSecondary} onClick={resetForm}>Cancelar</button>
+                <button type="submit" className={btnPrimary} disabled={saving}>
+                  {saving ? (
+                    <><i className="fas fa-spinner fa-spin text-xs" /> Guardando...</>
+                  ) : {editPlanificacion ? 'Salvar' : 'Criar monitoreo'}}
                 </button>
               </div>
-              <div className="modal-body">
-                <div className="row mb-3">
-                  <div className="col">
-                    <div className="card border-primary">
-                      <div className="card-body py-2">
-                        <strong>Planificación</strong> – Ha: {formatDecimal(showDetail.hectares)} | Costo est.: {formatDecimal(showDetail.costo_estimado)} USD
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="row mb-2">
-                  <div className="col">
-                    <div className="card border-secondary">
-                      <div className="card-body py-2 d-flex justify-content-between align-items-center">
-                        <span><strong>Siembra</strong> {showDetail.tiene_siembra ? "– Registrada" : ""}</span>
-                        {!showDetail.tiene_siembra ? (
-                          <button type="button" className="btn btn-sm btn-success" onClick={() => handleIniciarSiembra(showDetail)}>
-                            Iniciar Siembra
-                          </button>
-                        ) : (
-                          <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => handleVerSiembra(showDetail)}>
-                            Ver detalle / Editar
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="row mb-2">
-                  <div className="col">
-                    <div className="card border-secondary">
-                      <div className="card-body py-2">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <span><strong>Aplicaciones</strong> {showDetail.tiene_aplicaciones ? "– Con registros" : ""}</span>
-                          <button type="button" className="btn btn-sm btn-success" onClick={() => handleIniciarAplicacion(showDetail)}>
-                            Nueva aplicación
-                          </button>
-                        </div>
-                        {showDetail.tiene_aplicaciones && aplicacionesList.length > 0 && (
-                          <ul className="list-unstyled mb-0 mt-1 small">
-                            {aplicacionesList.map((a) => (
-                              <li key={a.id} className="d-flex justify-content-between align-items-center">
-                                <span>Fecha: {a.fecha_aplicacion ?? "-"}</span>
-                                <button type="button" className="btn btn-xs btn-outline-primary" onClick={() => handleVerAplicacion(a.id, showDetail)}>
-                                  Ver detalle
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="row mb-2">
-                  <div className="col">
-                    <div className="card border-secondary">
-                      <div className="card-body py-2">
-                        <div className="d-flex justify-content-between align-items-center mb-1">
-                          <span><strong>Evaluaciones</strong> {showDetail.tiene_evaluaciones ? "– Con registros" : ""}</span>
-                          <button type="button" className="btn btn-sm btn-success" onClick={() => handleIniciarEvaluacion(showDetail)}>
-                            Nueva evaluación
-                          </button>
-                        </div>
-                        {showDetail.tiene_evaluaciones && evaluacionesList.length > 0 && (
-                          <ul className="list-unstyled mb-0 mt-1 small">
-                            {evaluacionesList.map((e) => (
-                              <li key={e.id} className="d-flex justify-content-between align-items-center">
-                                <span>Fecha: {e.fecha_evaluacion}</span>
-                                <button type="button" className="btn btn-xs btn-outline-primary" onClick={() => handleVerEvaluacion(e.id, showDetail)}>
-                                  Ver detalle
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="row mb-2">
-                  <div className="col">
-                    <div className="card border-secondary">
-                      <div className="card-body py-2 d-flex justify-content-between align-items-center">
-                        <span><strong>Cosecha</strong> {showDetail.tiene_cosecha ? "– Registrada" : ""}</span>
-                        {!showDetail.tiene_cosecha && showDetail.tiene_siembra && (showDetail.tiene_aplicaciones || showDetail.tiene_evaluaciones) ? (
-                          <button type="button" className="btn btn-sm btn-success" onClick={() => handleIniciarCosecha(showDetail)}>
-                            Iniciar Cosecha
-                          </button>
-                        ) : showDetail.tiene_cosecha ? (
-                          <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => handleVerCosecha(showDetail)}>
-                            Ver detalle / Editar
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="row mb-2">
-                  <div className="col">
-                    <div className="card border-secondary">
-                      <div className="card-body py-2 d-flex justify-content-between align-items-center">
-                        <span><strong>RTE</strong> {showDetail.tiene_rte ? "– Registrado" : ""}</span>
-                        {!showDetail.tiene_rte && showDetail.tiene_cosecha ? (
-                          <button type="button" className="btn btn-sm btn-success" onClick={() => handleIniciarRte(showDetail)}>
-                            Iniciar RTE
-                          </button>
-                        ) : showDetail.tiene_rte ? (
-                          <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => handleVerRte(showDetail)}>
-                            Ver detalle / Editar
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {showDetail.tiene_rte && !showDetail.concluido && (
-                  <div className="row">
-                    <div className="col">
-                      <button type="button" className="btn btn-success" onClick={() => handleConcluir(showDetail)}>
-                        Concluir monitoreo
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {showDetail.concluido && (
-                  <p className="text-muted mb-0">Monitoreo concluido. Solo lectura.</p>
-                )}
-              </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      {siembraModal && (
-        <SiembraModal
-          monitoreo={siembraModal.monitoreo}
-          siembraId={siembraModal.siembraId}
-          areaHa={parcelas.find((p) => p.id === siembraModal.monitoreo.id_parcela)?.area_real_ha ?? siembraModal.monitoreo.hectares ?? null}
-          onClose={() => setSiembraModal(null)}
-          onSaved={() => loadMonitoreos()}
-        />
-      )}
+      {/* ── Modal Detalhe da Esteira (Pipeline) ── */}
+      {showDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 text-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-agro-primary/10 text-agro-primary rounded-lg flex items-center justify-center">
+                  <i className="fas fa-eye text-sm" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 leading-tight">Monitoreo Detalhado</h3>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                    {showDetail.cliente_nombre} / {showDetail.parcela_nombre} / {showDetail.zafra_nombre}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDetail(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                type="button"
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
 
-      {aplicacionModal && (
-        <AplicacionModal
-          aplicacionId={aplicacionModal.aplicacionId}
-          monitoreo={aplicacionModal.monitoreo}
-          areaHa={aplicacionModal.areaHa}
-          onClose={() => setAplicacionModal(null)}
-          onSaved={() => {
-            loadMonitoreos();
-            const monId = aplicacionModal.monitoreo.id;
-            supabase.from("aplicaciones").select("id, fecha_aplicacion").eq("id_monitoreo", monId).order("fecha_aplicacion", { ascending: false }).then(({ data }) => setAplicacionesList((data as any[]) ?? []));
+            <div className="p-6 overflow-y-auto space-y-4">
+              {/* Card de Resumo Planificação */}
+              
+              <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center bg-blue-50/50 border-blue-100">
+                <div className="flex gap-6">
+                  <div>
+                    <span className="block text-[10px] uppercase text-gray-400 font-bold mb-0.5">Hectáreas</span>
+                    <span className="text-gray-900 font-bold font-mono">{formatDecimal(showDetail.hectares)} ha</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] uppercase text-gray-400 font-bold mb-0.5">Costo est. (USD)</span>
+                    <span className="text-agro-primary font-bold font-mono">${formatDecimal(showDetail.costo_estimado)}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] uppercase text-gray-400 font-bold mb-0.5">Prod est. (kg/ha)</span>
+                    <span className="text-gray-900 font-bold font-mono">{formatDecimal(showDetail.productividad_estimada)}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!showDetail.concluido && !showDetail.tiene_siembra && !showDetail.tiene_aplicaciones && !showDetail.tiene_evaluaciones && !showDetail.tiene_cosecha && !showDetail.tiene_rte && (
+                    <button type="button" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1" onClick={() => {
+                      setForm({
+                        id_cliente: showDetail.id_cliente,
+                        id_parcela: showDetail.id_parcela,
+                        id_zafra: showDetail.id_zafra,
+                        costo_estimado: showDetail.costo_estimado ? String(showDetail.costo_estimado) : "",
+                        productividad_estimada: showDetail.productividad_estimada ? String(showDetail.productividad_estimada) : "",
+                      });
+                      setEditPlanificacion(true);
+                      setShowModal(true);
+                    }}>
+                      <i className="fas fa-edit"></i> Alterar Planificación
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              const isSiembraTerminada = siembraData?.fecha_termino != null;
+                const isCosechaTerminada = cosechaData?.fecha_termino != null;
+                const podeConcluir = showDetail.tiene_siembra && showDetail.tiene_aplicaciones && showDetail.tiene_evaluaciones && showDetail.tiene_cosecha && showDetail.tiene_rte && !showDetail.concluido && isSiembraTerminada && isCosechaTerminada;
+              }
+              {podeConcluir && (
+                <div className="pt-4 flex justify-center">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 px-8 py-3 bg-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all active:scale-95"
+                    onClick={() => handleConcluir(showDetail)}
+                  >
+                    <i className="fas fa-check-double" />
+                    Concluir Monitoreo
+                  </button>
+                </div>
+              )}.then(({ data }) => setAplicacionesList((data as any[]) ?? []));
           }}
         />
       )}
